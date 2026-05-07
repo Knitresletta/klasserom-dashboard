@@ -15,88 +15,129 @@
 </header>
 
 <main>
-  <!-- Venstre: Elevliste + Grupper -->
-  <div id="venstre-kolonne">
-    <div class="card" id="elever-kort">
-      <div class="card-header">
-        <h2>Elever</h2>
-      </div>
-      <div id="elev-liste"></div>
-      <div class="elev-count">
-        <strong id="elev-antall">0</strong>
-        <span id="elev-tekst">elever inne</span>
-      </div>
-      <div class="flex gap-2">
-        <button class="btn btn-primary btn-sm flex-1" id="btn-legg-til">+ Legg til elev</button>
-        <button class="btn btn-ghost btn-sm" id="btn-lister" title="Klasselister (l)">📋 Lister</button>
+  <!-- Card: Elever -->
+  <div class="card" id="card-elever">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>Elever</h2>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-elever')" title="Endre bredde"><span class="span-dots" id="span-card-elever">●○○</span></button>
       </div>
     </div>
-
-    <div class="card" id="grupper-kort">
-      <div class="card-header">
-        <h2>Grupper</h2>
-        <div class="flex gap-1">
-          <button class="btn btn-ghost btn-sm" id="btn-grupper-ny" title="Lag nye grupper (g)">🎲 Del inn</button>
-          <button class="btn btn-sm" id="btn-grupper-fjern" title="Fjern grupper">✕</button>
-        </div>
-      </div>
-      <div id="grupper-vis">
-        <p class="tom-tekst">Ingen grupper aktive — trykk <kbd>🎲 Del inn</kbd></p>
-      </div>
+    <div id="elev-liste"></div>
+    <div class="elev-count">
+      <strong id="elev-antall">0</strong>
+      <span id="elev-tekst">elever inne</span>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-primary btn-sm flex-1" id="btn-legg-til">+ Legg til elev</button>
+      <button class="btn btn-ghost btn-sm" id="btn-lister" title="Klasselister (l)">📋 Lister</button>
     </div>
   </div>
 
-  <!-- Midtre: Trekk -->
-  <div id="midtre-kolonne">
-    <div class="card">
+  <!-- Card: Grupper -->
+  <div class="card" id="card-grupper">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>Grupper</h2>
+      <div class="card-controls">
+        <button class="btn btn-ghost btn-sm" id="btn-grupper-ny" title="Lag nye grupper (g)">🎲 Del inn</button>
+        <button class="btn btn-sm" id="btn-grupper-fjern" title="Fjern grupper">✕</button>
+        <button class="btn-span" onclick="toggleSpan('card-grupper')" title="Endre bredde"><span class="span-dots" id="span-card-grupper">●○○</span></button>
+      </div>
+    </div>
+    <div id="grupper-vis">
+      <p class="tom-tekst">Ingen grupper aktive — trykk <kbd>🎲 Del inn</kbd></p>
+    </div>
+  </div>
+
+  <!-- Card: Tilfeldig -->
+  <div class="card" id="card-tilfeldig">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>🎲 Tilfeldig elev</h2>
-      <div id="tilfeldig-vis" class="draw-placeholder">Trykk Trekk for å velge en tilfeldig elev</div>
-      <div id="tilfeldig-backlog-count" class="backlog-count hidden"></div>
-      <div class="flex gap-2">
-        <button class="btn btn-primary flex-1" id="btn-tilfeldig" title="Trekk tilfeldig (r)">Trekk</button>
-        <button class="btn btn-ghost flex-1" id="btn-tilfeldig-backlog" title="Trekk uten repetisjon (R)">Trekk (bl)</button>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-tilfeldig')" title="Endre bredde"><span class="span-dots" id="span-card-tilfeldig">●○○</span></button>
       </div>
     </div>
-
-    <div class="card">
-      <h2>⭐ Ordenselever</h2>
-      <div id="ordenselev-vis" class="draw-placeholder">Trykk Trekk for å velge to ordenselever</div>
-      <div id="ordenselev-backlog-count" class="backlog-count hidden"></div>
-      <button class="btn btn-amber w-full" id="btn-ordenselev" title="Trekk ordenselever (o)">Trekk ordenselever</button>
-    </div>
-
-    <div class="card">
-      <h2>🐺 Ulv</h2>
-      <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som får bamsen hjem</div>
-      <div id="ulv-backlog-count" class="backlog-count hidden"></div>
-      <button class="btn btn-ghost w-full" id="btn-ulv" title="Trekk ulv (u)">Trekk ulv</button>
+    <div id="tilfeldig-vis" class="draw-placeholder">Trykk Trekk for å velge en tilfeldig elev</div>
+    <div id="tilfeldig-backlog-count" class="backlog-count hidden"></div>
+    <div class="flex gap-2">
+      <button class="btn btn-primary flex-1" id="btn-tilfeldig" title="Trekk tilfeldig (r)">Trekk</button>
+      <button class="btn btn-ghost flex-1" id="btn-tilfeldig-backlog" title="Trekk uten repetisjon (R)">Trekk (bl)</button>
     </div>
   </div>
 
-  <!-- Høyre: Timer + Notat + Dagsplan -->
-  <div id="hoyre-kolonne">
-    <div class="card">
-      <h2>⏱ Timer</h2>
-      <div id="timer-display">05:00</div>
-      <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
-      <div id="timer-status" class="timer-status">⏸ Pauset</div>
-      <div class="timer-controls">
-        <button class="btn btn-success flex-1" id="btn-timer-toggle" title="Start/stopp (t)">▶ Start</button>
-        <button class="btn btn-ghost" id="btn-timer-sett" title="Sett tid (s)">Sett tid</button>
-        <button class="btn btn-ghost btn-icon" id="btn-timer-reset" title="Nullstill timer">↺</button>
+  <!-- Card: Ordenselever -->
+  <div class="card" id="card-ordenselev">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>⭐ Ordenselever</h2>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-ordenselev')" title="Endre bredde"><span class="span-dots" id="span-card-ordenselev">●○○</span></button>
       </div>
     </div>
+    <div id="ordenselev-vis" class="draw-placeholder">Trykk Trekk for å velge to ordenselever</div>
+    <div id="ordenselev-backlog-count" class="backlog-count hidden"></div>
+    <button class="btn btn-amber w-full" id="btn-ordenselev" title="Trekk ordenselever (o)">Trekk ordenselever</button>
+  </div>
 
-    <div class="card card-flex">
+  <!-- Card: Ulv -->
+  <div class="card" id="card-ulv">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>🐺 Ulv</h2>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-ulv')" title="Endre bredde"><span class="span-dots" id="span-card-ulv">●○○</span></button>
+      </div>
+    </div>
+    <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som får bamsen hjem</div>
+    <div id="ulv-backlog-count" class="backlog-count hidden"></div>
+    <button class="btn btn-ghost w-full" id="btn-ulv" title="Trekk ulv (u)">Trekk ulv</button>
+  </div>
+
+  <!-- Card: Timer -->
+  <div class="card" id="card-timer">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>⏱ Timer</h2>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-timer')" title="Endre bredde"><span class="span-dots" id="span-card-timer">●○○</span></button>
+      </div>
+    </div>
+    <div id="timer-display">05:00</div>
+    <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+    <div id="timer-status" class="timer-status">⏸ Pauset</div>
+    <div class="timer-controls">
+      <button class="btn btn-success flex-1" id="btn-timer-toggle" title="Start/stopp (t)">▶ Start</button>
+      <button class="btn btn-ghost" id="btn-timer-sett" title="Sett tid (s)">Sett tid</button>
+      <button class="btn btn-ghost btn-icon" id="btn-timer-reset" title="Nullstill timer">↺</button>
+    </div>
+  </div>
+
+  <!-- Card: Notat -->
+  <div class="card" id="card-notat">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>📝 Notat</h2>
-      <textarea id="notat-textarea" placeholder="Skriv notat her…"></textarea>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-notat')" title="Endre bredde"><span class="span-dots" id="span-card-notat">●○○</span></button>
+      </div>
     </div>
+    <textarea id="notat-textarea" placeholder="Skriv notat her…"></textarea>
+  </div>
 
-    <div class="card">
+  <!-- Card: Dagsplan -->
+  <div class="card" id="card-dagsplan">
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>📋 Dagsplan</h2>
-      <div id="dagsplan-liste"></div>
-      <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-dagsplan')" title="Endre bredde"><span class="span-dots" id="span-card-dagsplan">●○○</span></button>
+      </div>
     </div>
+    <div id="dagsplan-liste"></div>
+    <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
   </div>
 </main>
 

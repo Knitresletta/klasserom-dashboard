@@ -41,6 +41,16 @@ function defaultState() {
     grupper:             null,
     lister:              {},
     timer_varighet:      300,
+    widget_layout: [
+      { id: 'card-elever',     col: 1, span: 1 },
+      { id: 'card-grupper',    col: 1, span: 1 },
+      { id: 'card-tilfeldig',  col: 2, span: 1 },
+      { id: 'card-ordenselev', col: 2, span: 1 },
+      { id: 'card-ulv',        col: 2, span: 1 },
+      { id: 'card-timer',      col: 3, span: 1 },
+      { id: 'card-notat',      col: 3, span: 1 },
+      { id: 'card-dagsplan',   col: 3, span: 1 },
+    ],
   };
 }
 
@@ -538,6 +548,121 @@ function renderListerModal() {
   </div>`;
 }
 
+// ===================== Layout (drag + span) =====================
+function applyLayout() {
+  // Forsikre at widget_layout er komplett (for gamle lagrede states)
+  const defaults = defaultState().widget_layout;
+  defaults.forEach(def => {
+    if (!state.widget_layout.find(w => w.id === def.id)) {
+      state.widget_layout.push({ ...def });
+    }
+  });
+
+  state.widget_layout.forEach(({ id, col, span }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.gridColumn = span > 1 ? `${col} / span ${span}` : String(col);
+    // Oppdater span-dots
+    const dots = document.getElementById(`span-${id}`);
+    if (dots) dots.textContent = ['●○○', '●●○', '●●●'][span - 1] ?? '●○○';
+  });
+}
+
+function toggleSpan(cardId) {
+  const entry = state.widget_layout.find(w => w.id === cardId);
+  if (!entry) return;
+  entry.span = (entry.span % 3) + 1;
+  // Klamp kolonne så vi ikke går utenfor 3-kolonne-grid
+  entry.col = Math.min(entry.col, 4 - entry.span);
+  saveState();
+  applyLayout();
+}
+
+function kolonneFraMus(clientX) {
+  // Finn faktiske kolonneposisjoner fra kort som er i grid
+  const colRanges = {};
+  state.widget_layout.forEach(({ id, col, span }) => {
+    const el = document.getElementById(id);
+    if (!el || el.classList.contains('dragging')) return;
+    const rect = el.getBoundingClientRect();
+    // Registrer alle kolonner dette kortet okkuperer
+    for (let c = col; c < col + span; c++) {
+      if (!colRanges[c]) colRanges[c] = { left: Infinity, right: -Infinity };
+      colRanges[c].left  = Math.min(colRanges[c].left,  rect.left);
+      colRanges[c].right = Math.max(colRanges[c].right, rect.right);
+    }
+  });
+
+  for (const col of [1, 2, 3]) {
+    const r = colRanges[col];
+    if (r && clientX >= r.left - 20 && clientX <= r.right + 20) return col;
+  }
+
+  // Fallback: del main-bredden i tredjeler
+  const mainRect = document.querySelector('main').getBoundingClientRect();
+  const relX = clientX - mainRect.left;
+  if (relX < mainRect.width * 0.33) return 1;
+  if (relX < mainRect.width * 0.67) return 2;
+  return 3;
+}
+
+function settOppDragOgDrop() {
+  const main = document.querySelector('main');
+  let dragId = null;
+
+  document.querySelectorAll('.drag-handle').forEach(handle => {
+    const card = handle.closest('.card');
+    handle.addEventListener('mousedown', () => { card.draggable = true; });
+  });
+
+  document.addEventListener('mouseup', () => {
+    document.querySelectorAll('main > .card').forEach(c => { c.draggable = false; });
+  });
+
+  main.addEventListener('dragstart', e => {
+    const card = e.target.closest('.card');
+    if (!card || !card.draggable) { e.preventDefault(); return; }
+    dragId = card.id;
+    card.classList.add('dragging');
+    e.dataTransfer.setData('text/plain', card.id);
+    e.dataTransfer.effectAllowed = 'move';
+    // Bruk kortet selv som drag-ghost
+    e.dataTransfer.setDragImage(card, 20, 20);
+    main.classList.add('drag-active');
+  });
+
+  main.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+
+  main.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!dragId) return;
+    const nyKolonne = kolonneFraMus(e.clientX);
+    const entry = state.widget_layout.find(w => w.id === dragId);
+    if (entry && entry.col !== nyKolonne) {
+      entry.col = nyKolonne;
+      // Klamp span ved behov
+      entry.col = Math.min(entry.col, 4 - entry.span);
+      saveState();
+      applyLayout();
+    }
+    avsluttDrag();
+  });
+
+  main.addEventListener('dragend', () => avsluttDrag());
+
+  function avsluttDrag() {
+    if (dragId) {
+      const el = document.getElementById(dragId);
+      if (el) { el.classList.remove('dragging'); el.draggable = false; }
+      dragId = null;
+    }
+    main.classList.remove('drag-active');
+  }
+}
+
 // ===================== Reset =====================
 function nullstillTilfeldig()   { state.tilfeldig_valgt = null; state.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
 function nullstillOrdenselev()  { state.ordenselev_valgte = []; state.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
@@ -781,7 +906,9 @@ function init() {
   renderDagsplan();
   setupNotat();
   renderTimer();
+  applyLayout();
   settOppHendelser();
+  settOppDragOgDrop();
 }
 
 document.addEventListener('DOMContentLoaded', init);

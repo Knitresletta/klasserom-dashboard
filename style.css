@@ -52,18 +52,13 @@ header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-
 main {
   display: grid;
   grid-template-columns: 260px 1fr 260px;
+  grid-auto-flow: row dense;
   gap: 12px;
   padding: 12px;
   flex: 1;
   align-items: start;
 }
-#venstre-kolonne,
-#midtre-kolonne,
-#hoyre-kolonne {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+/* Kort er direkte barn av grid — ingen kolonne-wrappers */
 
 /* ===================== Cards ===================== */
 .card {
@@ -74,8 +69,10 @@ main {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transition: box-shadow .15s, opacity .15s;
+  min-width: 0; /* viktig for grid-overflow */
 }
-.card-flex { flex: 1; }
+.card.dragging { opacity: .45; box-shadow: none; }
 .card h2 {
   font-size: .72rem;
   font-weight: 700;
@@ -86,9 +83,52 @@ main {
 .card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .card-header h2 { flex: 1; }
+.card-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.card:hover .card-controls { opacity: 1; }
+
+/* ===================== Drag handle ===================== */
+.drag-handle {
+  cursor: grab;
+  color: var(--border);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+  user-select: none;
+  flex-shrink: 0;
+}
+.card:hover .drag-handle { opacity: 1; }
+.drag-handle:hover { color: var(--muted); }
+.drag-handle:active { cursor: grabbing; }
+
+/* ===================== Span toggle ===================== */
+.btn-span {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: background .1s;
+  flex-shrink: 0;
+}
+.btn-span:hover { background: var(--primary-l); }
+.span-dots {
+  font-size: .7rem;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.btn-span:hover .span-dots { color: var(--primary); }
 
 /* ===================== Buttons ===================== */
 .btn {
@@ -314,6 +354,15 @@ main {
   color: var(--red);
 }
 
+/* ===================== Drop indicator ===================== */
+main.drag-active::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
 /* ===================== Action bar ===================== */
 #action-bar {
   background: #fff;
@@ -503,13 +552,16 @@ main {
   main {
     grid-template-columns: 1fr 1fr;
   }
-  #hoyre-kolonne { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  /* Nullstill bruker-definert layout på liten skjerm */
+  main > .card {
+    grid-column: auto !important;
+  }
+  .drag-handle, .btn-span { display: none; }
   #notat-textarea { min-height: 70px; }
   .shortcut-hint { display: none; }
 }
 @media (max-width: 620px) {
   main { grid-template-columns: 1fr; }
-  #hoyre-kolonne { grid-column: span 1; display: flex; flex-direction: column; }
   #action-bar { flex-wrap: wrap; }
   .lagret-hint { display: none; }
 }
