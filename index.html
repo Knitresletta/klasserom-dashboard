@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Klasserom-dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>🏫 Klasserom</h1>
+  <div id="header-dato"></div>
+  <div id="header-ver"></div>
+</header>
+
+<main>
+  <!-- Venstre: Elevliste + Grupper -->
+  <div id="venstre-kolonne">
+    <div class="card" id="elever-kort">
+      <div class="card-header">
+        <h2>Elever</h2>
+      </div>
+      <div id="elev-liste"></div>
+      <div class="elev-count">
+        <strong id="elev-antall">0</strong>
+        <span id="elev-tekst">elever inne</span>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm flex-1" id="btn-legg-til">+ Legg til elev</button>
+        <button class="btn btn-ghost btn-sm" id="btn-lister" title="Klasselister (l)">📋 Lister</button>
+      </div>
+    </div>
+
+    <div class="card" id="grupper-kort">
+      <div class="card-header">
+        <h2>Grupper</h2>
+        <div class="flex gap-1">
+          <button class="btn btn-ghost btn-sm" id="btn-grupper-ny" title="Lag nye grupper (g)">🎲 Del inn</button>
+          <button class="btn btn-sm" id="btn-grupper-fjern" title="Fjern grupper">✕</button>
+        </div>
+      </div>
+      <div id="grupper-vis">
+        <p class="tom-tekst">Ingen grupper aktive — trykk <kbd>🎲 Del inn</kbd></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Midtre: Trekk -->
+  <div id="midtre-kolonne">
+    <div class="card">
+      <h2>🎲 Tilfeldig elev</h2>
+      <div id="tilfeldig-vis" class="draw-placeholder">Trykk Trekk for å velge en tilfeldig elev</div>
+      <div id="tilfeldig-backlog-count" class="backlog-count hidden"></div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary flex-1" id="btn-tilfeldig" title="Trekk tilfeldig (r)">Trekk</button>
+        <button class="btn btn-ghost flex-1" id="btn-tilfeldig-backlog" title="Trekk uten repetisjon (R)">Trekk (bl)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⭐ Ordenselever</h2>
+      <div id="ordenselev-vis" class="draw-placeholder">Trykk Trekk for å velge to ordenselever</div>
+      <div id="ordenselev-backlog-count" class="backlog-count hidden"></div>
+      <button class="btn btn-amber w-full" id="btn-ordenselev" title="Trekk ordenselever (o)">Trekk ordenselever</button>
+    </div>
+
+    <div class="card">
+      <h2>🐺 Ulv</h2>
+      <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som får bamsen hjem</div>
+      <div id="ulv-backlog-count" class="backlog-count hidden"></div>
+      <button class="btn btn-ghost w-full" id="btn-ulv" title="Trekk ulv (u)">Trekk ulv</button>
+    </div>
+  </div>
+
+  <!-- Høyre: Timer + Notat + Dagsplan -->
+  <div id="hoyre-kolonne">
+    <div class="card">
+      <h2>⏱ Timer</h2>
+      <div id="timer-display">05:00</div>
+      <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+      <div id="timer-status" class="timer-status">⏸ Pauset</div>
+      <div class="timer-controls">
+        <button class="btn btn-success flex-1" id="btn-timer-toggle" title="Start/stopp (t)">▶ Start</button>
+        <button class="btn btn-ghost" id="btn-timer-sett" title="Sett tid (s)">Sett tid</button>
+        <button class="btn btn-ghost btn-icon" id="btn-timer-reset" title="Nullstill timer">↺</button>
+      </div>
+    </div>
+
+    <div class="card card-flex">
+      <h2>📝 Notat</h2>
+      <textarea id="notat-textarea" placeholder="Skriv notat her…"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>📋 Dagsplan</h2>
+      <div id="dagsplan-liste"></div>
+      <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
+    </div>
+  </div>
+</main>
+
+<!-- Action bar -->
+<div id="action-bar">
+  <button class="btn btn-ghost btn-sm" id="btn-nullstill" title="Nullstill (n)">⚙️ Nullstill…</button>
+  <button class="btn btn-ghost btn-sm" id="btn-blackboard" title="Tavlemodus (b)">🖥 Tavle</button>
+  <div class="action-bar-right">
+    <span class="shortcut-hint">
+      <kbd>a</kbd> elev &nbsp;
+      <kbd>r</kbd> tilfeldig &nbsp;
+      <kbd>o</kbd> orden &nbsp;
+      <kbd>t</kbd> timer &nbsp;
+      <kbd>g</kbd> grupper &nbsp;
+      <kbd>b</kbd> tavle
+    </span>
+    <span class="lagret-hint">Lagres automatisk i nettleseren</span>
+  </div>
+</div>
+
+<!-- ============ MODALS ============ -->
+<div id="modal-overlay" class="modal-overlay hidden">
+
+  <div id="modal-legg-til" class="modal hidden">
+    <h3>Legg til elev</h3>
+    <input type="text" id="input-elev-navn" placeholder="Navn…" maxlength="60" autocomplete="off">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-legg-til-avbryt">Avbryt</button>
+      <button class="btn btn-success" id="btn-legg-til-bekreft">Legg til</button>
+    </div>
+  </div>
+
+  <div id="modal-timer-sett" class="modal hidden">
+    <h3>Sett nedtellingstid</h3>
+    <input type="number" id="input-timer-minutter" placeholder="Minutter (1–60)…" min="1" max="60">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-timer-sett-avbryt">Avbryt</button>
+      <button class="btn btn-success" id="btn-timer-sett-bekreft">OK</button>
+    </div>
+  </div>
+
+  <div id="modal-dagsplan" class="modal hidden">
+    <h3>Legg til punkt i dagsplan</h3>
+    <input type="text" id="input-dagsplan-punkt" placeholder="f.eks. Gjennomgang kapittel 3…" maxlength="80">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-dagsplan-avbryt">Avbryt</button>
+      <button class="btn btn-success" id="btn-dagsplan-bekreft">Legg til</button>
+    </div>
+  </div>
+
+  <div id="modal-grupper" class="modal hidden">
+    <h3>Del inn i grupper</h3>
+    <input type="number" id="input-grupper-antall" placeholder="Antall grupper (min. 2)…" min="2">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-grupper-avbryt">Avbryt</button>
+      <button class="btn btn-success" id="btn-grupper-bekreft">Del inn</button>
+    </div>
+  </div>
+
+  <div id="modal-lister" class="modal hidden">
+    <h3>Klasselister</h3>
+    <div id="lister-innhold"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost flex-1" id="btn-lister-lagre">💾 Lagre nåværende</button>
+      <button class="btn btn-primary" id="btn-lister-lukk">Lukk</button>
+    </div>
+  </div>
+
+  <div id="modal-lagre-liste" class="modal hidden">
+    <h3>Navn på listen</h3>
+    <input type="text" id="input-liste-navn" placeholder="f.eks. 8A, Valgfag høst…" maxlength="40">
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-lagre-liste-avbryt">Avbryt</button>
+      <button class="btn btn-success" id="btn-lagre-liste-bekreft">Lagre</button>
+    </div>
+  </div>
+
+  <div id="modal-nullstill" class="modal hidden">
+    <h3>Nullstill…</h3>
+    <div class="modal-list" id="nullstill-liste">
+      <div class="modal-list-item" data-action="tilfeldig"><span>🎲 Tilfeldig-trekk</span></div>
+      <div class="modal-list-item" data-action="ordenselev"><span>⭐ Ordenselever-trekk</span></div>
+      <div class="modal-list-item" data-action="ulv"><span>🐺 Ulv-trekk</span></div>
+      <div class="modal-list-item" data-action="grupper"><span>👥 Grupper</span></div>
+      <div class="modal-list-item" data-action="timer"><span>⏱ Timer</span></div>
+      <div class="modal-list-item" data-action="notat"><span>📝 Notat</span></div>
+      <div class="modal-list-item" data-action="dagsplan"><span>📋 Dagsplan</span></div>
+      <div class="modal-list-item danger" data-action="fjern_elever"><span>👤 Fjern elever…</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-nullstill-lukk">Lukk</button>
+    </div>
+  </div>
+
+  <div id="modal-fjern-elever" class="modal hidden">
+    <h3>Fjern elever</h3>
+    <div id="fjern-elever-liste" class="checkbox-list"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-fjern-avbryt">Avbryt</button>
+      <button class="btn btn-danger" id="btn-fjern-bekreft">Fjern valgte</button>
+    </div>
+  </div>
+</div>
+
+<!-- Blackboard overlay -->
+<div id="blackboard-overlay" class="hidden">
+  <span>Klikk eller trykk <kbd>Esc</kbd> for å avslutte tavlemodus</span>
+</div>
+
+<!-- Notifications -->
+<div id="notif-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
