@@ -16,6 +16,17 @@ const GRUPPE_FARGER = [
   { bg: '#e0f2fe', text: '#075985' },
 ];
 
+const WIDGET_NAVN = {
+  'card-elever':     'Elever',
+  'card-grupper':    'Grupper',
+  'card-tilfeldig':  '🎲 Tilfeldig elev',
+  'card-ordenselev': '⭐ Ordenselever',
+  'card-ulv':        '🐺 Ulv',
+  'card-timer':      '⏱ Timer',
+  'card-notat':      '📝 Notat',
+  'card-dagsplan':   '📋 Dagsplan',
+};
+
 const VÆR_KODER = {
   113: '☀️', 116: '⛅', 119: '☁️', 122: '☁️',
   143: '🌫️', 176: '🌦️', 263: '🌦️', 266: '🌦️',
@@ -41,6 +52,7 @@ function defaultState() {
     grupper:             null,
     lister:              {},
     timer_varighet:      300,
+    widget_hidden:       [],
     widget_layout: [
       { id: 'card-elever',     col: 1, span: 1 },
       { id: 'card-grupper',    col: 1, span: 1 },
@@ -420,11 +432,18 @@ function spillPip() {
 }
 
 // ===================== Notat =====================
+function autoResizeNotat(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
 function setupNotat() {
   const ta = document.getElementById('notat-textarea');
   ta.value = state.notat;
+  autoResizeNotat(ta);
   let debounce;
   ta.addEventListener('input', () => {
+    autoResizeNotat(ta);
     clearTimeout(debounce);
     debounce = setTimeout(() => {
       state.notat = ta.value;
@@ -558,14 +577,40 @@ function applyLayout() {
     }
   });
 
+  const skjult = state.widget_hidden ?? [];
   state.widget_layout.forEach(({ id, col, span }) => {
     const el = document.getElementById(id);
     if (!el) return;
+    if (skjult.includes(id)) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
     el.style.gridColumn = span > 1 ? `${col} / span ${span}` : String(col);
     // Oppdater span-dots
     const dots = document.getElementById(`span-${id}`);
     if (dots) dots.textContent = ['●○○', '●●○', '●●●'][span - 1] ?? '●○○';
   });
+}
+
+function renderWidgetMeny() {
+  const dropdown = document.getElementById('widget-dropdown');
+  const skjult = state.widget_hidden ?? [];
+  dropdown.innerHTML = Object.entries(WIDGET_NAVN).map(([id, navn]) => `
+    <label class="widget-meny-rad">
+      <input type="checkbox" ${skjult.includes(id) ? '' : 'checked'}
+             onchange="toggleWidgetSynlighet('${id}', this.checked)">
+      ${navn}
+    </label>`).join('');
+}
+
+function toggleWidgetSynlighet(id, synlig) {
+  const skjult = state.widget_hidden ?? [];
+  state.widget_hidden = synlig
+    ? skjult.filter(h => h !== id)
+    : [...skjult, id];
+  saveState();
+  applyLayout();
 }
 
 function toggleSpan(cardId) {
@@ -856,6 +901,17 @@ function settOppHendelser() {
     document.getElementById('blackboard-overlay').classList.remove('hidden');
   document.getElementById('blackboard-overlay').onclick = () =>
     document.getElementById('blackboard-overlay').classList.add('hidden');
+
+  // Widget-synlighetsmeny
+  const btnWidgetMeny   = document.getElementById('btn-widget-meny');
+  const widgetDropdown  = document.getElementById('widget-dropdown');
+  btnWidgetMeny.onclick = e => {
+    e.stopPropagation();
+    renderWidgetMeny();
+    widgetDropdown.classList.toggle('hidden');
+  };
+  widgetDropdown.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', () => widgetDropdown.classList.add('hidden'));
 
   // Lukk modal ved klikk på overlay
   document.getElementById('modal-overlay').addEventListener('click', e => {

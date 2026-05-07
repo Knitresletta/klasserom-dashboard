@@ -46,7 +46,7 @@ header {
 }
 header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
 #header-dato { font-size: .85rem; opacity: .9; }
-#header-ver   { font-size: .82rem; opacity: .85; margin-left: auto; white-space: nowrap; }
+#header-ver   { font-size: .82rem; opacity: .85; white-space: nowrap; }
 
 /* ===================== Main grid ===================== */
 main {
@@ -169,8 +169,6 @@ main {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 320px;
-  overflow-y: auto;
 }
 .elev-item {
   display: flex;
@@ -294,8 +292,8 @@ main {
   font-family: inherit;
   font-size: .88rem;
   color: var(--text);
-  min-height: 90px;
-  flex: 1;
+  height: auto;
+  overflow: hidden;
   outline: none;
   transition: border-color .15s;
   background: #fafbff;
@@ -352,6 +350,59 @@ main {
 #btn-grupper-fjern {
   background: var(--red-l);
   color: var(--red);
+}
+
+/* ===================== Header widget-meny ===================== */
+#widget-meny-wrapper {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#btn-widget-meny {
+  background: rgb(255 255 255 / .18);
+  border: 1px solid rgb(255 255 255 / .3);
+  color: white;
+  border-radius: var(--r-sm);
+  padding: 5px 11px;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s;
+}
+#btn-widget-meny:hover { background: rgb(255 255 255 / .28); }
+#widget-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  background: white;
+  border-radius: var(--r);
+  box-shadow: var(--shadow-md);
+  padding: 10px 0;
+  min-width: 210px;
+  z-index: 150;
+  animation: modal-in .15s ease;
+}
+.widget-meny-rad {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: .88rem;
+  color: var(--text);
+  transition: background .1s;
+  user-select: none;
+}
+.widget-meny-rad:hover { background: var(--bg); }
+.widget-meny-rad input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--primary);
+  flex-shrink: 0;
 }
 
 /* ===================== Drop indicator ===================== */
