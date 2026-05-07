@@ -62,6 +62,7 @@ function defaultState() {
     lister:              {},
     timer_varighet:      300,
     widget_hidden:       [],
+    tema: 'lyst',
     widget_layout: [
       { id: 'card-elever',     col: 1, span: 1 },
       { id: 'card-grupper',    col: 1, span: 1 },
@@ -916,6 +917,16 @@ function inputEnter(inputId, bekreftFn) {
   });
 }
 
+// ===================== Tema =====================
+function settTema(tema) {
+  state.tema = tema;
+  document.documentElement.setAttribute('data-theme', tema);
+  saveState();
+  document.querySelectorAll('.tema-valg').forEach(el => {
+    el.classList.toggle('aktiv', el.dataset.tema === tema);
+  });
+}
+
 // ===================== Event setup =====================
 function settOppHendelser() {
   // Legg til elev
@@ -1071,6 +1082,12 @@ function settOppHendelser() {
     klasseromDrop.classList.add('hidden');
     åpneInfoModal('❓ Brukerveiledning', BRUKERVEILEDNING_HTML);
   };
+  document.querySelectorAll('.tema-valg').forEach(el => {
+    el.onclick = () => {
+      settTema(el.dataset.tema);
+      klasseromDrop.classList.add('hidden');
+    };
+  });
 
   // Info-modal lukk
   document.getElementById('btn-info-lukk').onclick = lukkInfoModal;
@@ -1146,6 +1163,7 @@ function init() {
   setupNotat();
   renderTimer();
   applyLayout();
+  settTema(state.tema ?? 'lyst');
   settOppHendelser();
   settOppDragOgDrop();
 }
