@@ -27,12 +27,21 @@ const WIDGET_NAVN = {
   'card-dagsplan':   '📋 Dagsplan',
 };
 
-const VÆR_KODER = {
-  113: '☀️', 116: '⛅', 119: '☁️', 122: '☁️',
-  143: '🌫️', 176: '🌦️', 263: '🌦️', 266: '🌦️',
-  293: '🌧️', 302: '🌧️', 323: '❄️', 332: '❄️',
-  386: '⛈️', 389: '⛈️',
-};
+const VÆR_LAT = 60.33;
+const VÆR_LON = 11.22;
+
+function yrEmoji(kode) {
+  if (kode.includes('clearsky'))                         return '☀️';
+  if (kode.includes('fair'))                             return '🌤️';
+  if (kode.includes('partlycloudy'))                     return '⛅';
+  if (kode.includes('fog'))                              return '🌫️';
+  if (kode.includes('thunder'))                          return '⛈️';
+  if (kode.includes('snow'))                             return '❄️';
+  if (kode.includes('sleet'))                            return '🌨️';
+  if (kode.includes('rain') || kode.includes('drizzle')) return '🌧️';
+  return '☁️';
+}
+
 const UKEDAGER = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
 const MÅNEDER  = ['januar', 'februar', 'mars', 'april', 'mai', 'juni',
                   'juli', 'august', 'september', 'oktober', 'november', 'desember'];
@@ -67,6 +76,7 @@ function defaultState() {
 }
 
 let state = loadState();
+let værData = null;
 
 // Timer runtime state (not persisted)
 let timerRemaining = state.timer_varighet;
@@ -103,16 +113,47 @@ function oppdaterDato() {
 
 async function hentVær() {
   try {
-    const res = await fetch('https://wttr.in/Eidsvoll?format=j1', {
-      headers: { 'User-Agent': 'klasserom-web/1.0' },
-    });
-    const data = await res.json();
-    const c     = data.current_condition[0];
-    const emoji = VÆR_KODER[parseInt(c.weatherCode)] || '🌡️';
-    document.getElementById('header-ver').textContent = `${emoji} ${c.temp_C}°C  Eidsvoll`;
-  } catch (_) {
-    // Stille feil — ingen vær-data er OK
-  }
+    const res = await fetch(
+      `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${VÆR_LAT}&lon=${VÆR_LON}`,
+      { headers: { 'User-Agent': 'klasserom-dashboard/1.0 github.com/Knitresletta/klasserom-dashboard kanadurr@gmail.com' } }
+    );
+    værData = await res.json();
+    const nå    = værData.properties.timeseries[0];
+    const temp  = Math.round(nå.data.instant.details.air_temperature);
+    const emoji = yrEmoji(nå.data.next_1_hours?.summary.symbol_code ?? 'cloudy');
+    document.getElementById('header-ver').textContent = `${emoji} ${temp}°C  Eidsvoll`;
+  } catch (_) {}
+}
+
+function visVærPopup() {
+  if (!værData) return;
+  const ts  = værData.properties.timeseries;
+  const nå  = ts[0].data.instant.details;
+
+  const timer = ts.slice(0, 8).map(t => ({
+    tid:    new Date(t.time).toLocaleTimeString('no', { hour: '2-digit', minute: '2-digit' }),
+    temp:   Math.round(t.data.instant.details.air_temperature),
+    emoji:  yrEmoji(t.data.next_1_hours?.summary.symbol_code ?? 'cloudy'),
+    nedbør: t.data.next_1_hours?.details.precipitation_amount ?? 0,
+  }));
+
+  document.getElementById('vær-popup').innerHTML = `
+    <div class="vær-nå">
+      <div class="vær-rad"><span>Temperatur</span><strong>${Math.round(nå.air_temperature)}°C</strong></div>
+      <div class="vær-rad"><span>Vind</span><strong>${Math.round(nå.wind_speed)} m/s</strong></div>
+      <div class="vær-rad"><span>Luftfuktighet</span><strong>${Math.round(nå.relative_humidity)}%</strong></div>
+      <div class="vær-rad"><span>Lufttrykk</span><strong>${Math.round(nå.air_pressure_at_sea_level)} hPa</strong></div>
+    </div>
+    <div class="vær-timer">
+      ${timer.map(t => `
+        <div class="vær-time-kort">
+          <span class="vær-time-tid">${t.tid}</span>
+          <span class="vær-time-emoji">${t.emoji}</span>
+          <span class="vær-time-temp">${t.temp}°</span>
+          ${t.nedbør > 0 ? `<span class="vær-time-nedbør">${t.nedbør}mm</span>` : '<span></span>'}
+        </div>`).join('')}
+    </div>`;
+  document.getElementById('vær-popup').classList.toggle('hidden');
 }
 
 // ===================== Students =====================
@@ -715,6 +756,108 @@ function nullstillUlv()         { state.ulv_valgt = null; state.ulv_backlog = []
 function nullstillNotat()       { state.notat = ''; saveState(); document.getElementById('notat-textarea').value = ''; notify('📝 Notat nullstilt'); }
 function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagsplan(); notify('📋 Dagsplan nullstilt'); }
 
+// ===================== Info modal =====================
+const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.3</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Vær-popup med detaljer og timesforecast fra Yr.no</li>
+      <li>Klasserom-meny med oppdateringslogg og brukerveiledning</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.2</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Widget-synlighetsmeny — skjul/vis kort fra headeren</li>
+      <li>Elevliste ekspanderer automatisk uten scrollbar</li>
+      <li>Notat-felt vokser med innholdet</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.1</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Dra-og-slipp for å flytte widgets til valgfri kolonne</li>
+      <li>Span-knapp for å strekke et kort over 2–3 kolonner</li>
+      <li>Layout lagres og gjenopprettes automatisk</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.0</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Elevliste med legg til/fjern og lagrede lister</li>
+      <li>Tilfeldig-trekk, ordenselever og ulv — alle med backlog</li>
+      <li>Nedtellingstimer med lyd</li>
+      <li>Notat og dagsplan</li>
+      <li>Tilfeldig gruppeinndeling</li>
+      <li>Tavlemodus (svart skjerm)</li>
+    </ul>
+  </div>`;
+
+const BRUKERVEILEDNING_HTML = `
+  <h4>Kom i gang</h4>
+  <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
+  <p>Vil du spare tid neste gang? Lagre elevlisten din under <strong>📋 Lister</strong>, og last den inn igjen med ett klikk.</p>
+
+  <h4>Trekke elever</h4>
+  <p><strong>🎲 Tilfeldig elev</strong> — trykk <strong>Trekk</strong> for å velge en tilfeldig elev fra listen. Vanlig trekk unngår å velge samme elev to ganger på rad.</p>
+  <p><strong>Trekk (bl)</strong> — trekker uten repetisjon (backlog). Hver elev trekkes én gang før noen trekkes på nytt. Antall trukket vises under knappen.</p>
+  <p><strong>⭐ Ordenselever</strong> — velger to elever som har ordenselev-ansvar. Bruker også backlog, slik at alle rekker å ha vært ordenselev før noen gjentas.</p>
+  <p><strong>🐺 Ulv</strong> — velger hvem som får bamsen (eller en annen gjenstand) med hjem. Også med backlog.</p>
+  <p>Vil du nullstille en backlog? Trykk <strong>⚙️ Nullstill…</strong> nederst til venstre.</p>
+
+  <h4>Grupper</h4>
+  <p>Trykk <strong>🎲 Del inn</strong> i Grupper-kortet (eller tasten <kbd>g</kbd>). Skriv inn antall grupper, og elevene fordeles tilfeldig. Gruppefarger vises også i elevlisten. Trykk <strong>✕</strong> for å fjerne gruppeinndelingen.</p>
+
+  <h4>Timer</h4>
+  <p>Standard er 5 minutter. Trykk <strong>Sett tid</strong> (eller <kbd>s</kbd>) for å velge en annen varighet (1–60 min). Start og stopp med <strong>▶ Start</strong> (eller <kbd>t</kbd>). En lyd spilles av når tiden er ute.</p>
+
+  <h4>Notat</h4>
+  <p>Et fritekst-felt som vokser automatisk med innholdet. Lagres automatisk i nettleseren — du mister ikke notatet ved omlasting.</p>
+
+  <h4>Dagsplan</h4>
+  <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
+
+  <h4>Tilpasse layouten</h4>
+  <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Trykk på <strong>●○○</strong>-knappen for å strekke et kort over 2 eller 3 kolonner. Layouten huskes automatisk.</p>
+  <p>Vil du skjule et kort du ikke bruker? Trykk <strong>⊞ Widgets</strong> øverst til høyre og fjern avhukingen.</p>
+
+  <h4>Tavlemodus</h4>
+  <p>Trykk <strong>🖥 Tavle</strong> (eller <kbd>b</kbd>) for en helt svart skjerm — nyttig når du vil fokusere elevoppmerksomheten. Klikk hvor som helst eller trykk <kbd>Esc</kbd> for å avslutte.</p>
+
+  <h4>Tastatursnarveger</h4>
+  <ul>
+    <li><kbd>a</kbd> — Legg til elev</li>
+    <li><kbd>r</kbd> — Trekk tilfeldig elev</li>
+    <li><kbd>R</kbd> — Trekk tilfeldig (backlog)</li>
+    <li><kbd>o</kbd> — Trekk ordenselever</li>
+    <li><kbd>u</kbd> — Trekk ulv</li>
+    <li><kbd>t</kbd> — Start/stopp timer</li>
+    <li><kbd>s</kbd> — Sett timer-tid</li>
+    <li><kbd>g</kbd> — Del inn i grupper</li>
+    <li><kbd>d</kbd> — Legg til dagsplan-punkt</li>
+    <li><kbd>l</kbd> — Vis klasselister</li>
+    <li><kbd>b</kbd> — Tavlemodus</li>
+    <li><kbd>n</kbd> — Nullstill…</li>
+    <li><kbd>Esc</kbd> — Lukk åpne vinduer</li>
+  </ul>
+
+  <h4>Lagring</h4>
+  <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>`;
+
+function åpneInfoModal(tittel, innholdHtml) {
+  document.getElementById('info-modal-tittel').textContent = tittel;
+  document.getElementById('info-modal-innhold').innerHTML = innholdHtml;
+  document.getElementById('info-overlay').classList.remove('hidden');
+}
+
+function lukkInfoModal() {
+  document.getElementById('info-overlay').classList.add('hidden');
+}
+
 // ===================== Modals =====================
 let aktivModal = null;
 
@@ -911,7 +1054,43 @@ function settOppHendelser() {
     widgetDropdown.classList.toggle('hidden');
   };
   widgetDropdown.addEventListener('click', e => e.stopPropagation());
-  document.addEventListener('click', () => widgetDropdown.classList.add('hidden'));
+
+  // Klasserom-meny
+  const btnKlasserom  = document.getElementById('btn-klasserom-meny');
+  const klasseromDrop = document.getElementById('klasserom-dropdown');
+  btnKlasserom.onclick = e => {
+    e.stopPropagation();
+    klasseromDrop.classList.toggle('hidden');
+  };
+  klasseromDrop.addEventListener('click', e => e.stopPropagation());
+  document.getElementById('btn-åpne-logg').onclick  = () => {
+    klasseromDrop.classList.add('hidden');
+    åpneInfoModal('📋 Oppdateringslogg', OPPDATERINGSLOGG_HTML);
+  };
+  document.getElementById('btn-åpne-guide').onclick = () => {
+    klasseromDrop.classList.add('hidden');
+    åpneInfoModal('❓ Brukerveiledning', BRUKERVEILEDNING_HTML);
+  };
+
+  // Info-modal lukk
+  document.getElementById('btn-info-lukk').onclick = lukkInfoModal;
+  document.getElementById('info-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('info-overlay')) lukkInfoModal();
+  });
+
+  // Vær-popup
+  document.getElementById('header-ver').onclick = e => {
+    e.stopPropagation();
+    visVærPopup();
+  };
+  document.getElementById('vær-popup').addEventListener('click', e => e.stopPropagation());
+
+  // Lukk alle dropdowns ved klikk utenfor
+  document.addEventListener('click', () => {
+    widgetDropdown.classList.add('hidden');
+    klasseromDrop.classList.add('hidden');
+    document.getElementById('vær-popup').classList.add('hidden');
+  });
 
   // Lukk modal ved klikk på overlay
   document.getElementById('modal-overlay').addEventListener('click', e => {
@@ -923,6 +1102,10 @@ function settOppHendelser() {
     const blackboard = document.getElementById('blackboard-overlay');
     if (!blackboard.classList.contains('hidden')) {
       if (e.key === 'Escape') blackboard.classList.add('hidden');
+      return;
+    }
+    if (!document.getElementById('info-overlay').classList.contains('hidden')) {
+      if (e.key === 'Escape') lukkInfoModal();
       return;
     }
     if (aktivModal) {

@@ -9,10 +9,19 @@
 <body>
 
 <header>
-  <h1>🏫 Klasserom</h1>
+  <div id="klasserom-meny-wrapper">
+    <h1 id="btn-klasserom-meny" title="Meny">🏫 Klasserom</h1>
+    <div id="klasserom-dropdown" class="hidden">
+      <div class="kl-dropdown-item" id="btn-åpne-logg">📋 Oppdateringslogg</div>
+      <div class="kl-dropdown-item" id="btn-åpne-guide">❓ Brukerveiledning</div>
+    </div>
+  </div>
   <div id="header-dato"></div>
   <div id="widget-meny-wrapper">
-    <div id="header-ver"></div>
+    <div id="vær-wrapper">
+      <div id="header-ver" title="Klikk for detaljer"></div>
+      <div id="vær-popup" class="hidden"></div>
+    </div>
     <button id="btn-widget-meny" title="Vis/skjul widgets">⊞ Widgets</button>
     <div id="widget-dropdown" class="hidden"></div>
   </div>
@@ -253,6 +262,17 @@
 
 <!-- Notifications -->
 <div id="notif-container"></div>
+
+<!-- Info overlay (logg + veiledning) -->
+<div id="info-overlay" class="modal-overlay hidden">
+  <div class="info-modal">
+    <div class="info-modal-header">
+      <h3 id="info-modal-tittel"></h3>
+      <button id="btn-info-lukk" class="btn-lukk-stor">✕</button>
+    </div>
+    <div id="info-modal-innhold" class="info-modal-innhold"></div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
