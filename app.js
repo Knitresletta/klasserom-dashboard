@@ -63,6 +63,10 @@ function defaultState() {
     timer_varighet:      300,
     widget_hidden:       [],
     tema: 'lyst',
+    font: 'system',
+    skrift_størrelse: 'normal',
+    widget_størrelser: {},
+    notat_kursiv: false,
     widget_layout: [
       { id: 'card-elever',     col: 1, span: 1 },
       { id: 'card-grupper',    col: 1, span: 1 },
@@ -483,6 +487,15 @@ function setupNotat() {
   const ta = document.getElementById('notat-textarea');
   ta.value = state.notat;
   autoResizeNotat(ta);
+  const btnKursiv = document.getElementById('btn-notat-kursiv');
+  ta.classList.toggle('kursiv', !!state.notat_kursiv);
+  btnKursiv.classList.toggle('aktiv', !!state.notat_kursiv);
+  btnKursiv.onclick = () => {
+    state.notat_kursiv = !state.notat_kursiv;
+    ta.classList.toggle('kursiv', state.notat_kursiv);
+    btnKursiv.classList.toggle('aktiv', state.notat_kursiv);
+    saveState();
+  };
   let debounce;
   ta.addEventListener('input', () => {
     autoResizeNotat(ta);
@@ -760,6 +773,17 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v1.4</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Tema-velger med hover-sub-meny: 3 standard + 8 eventyr/digital-temaer</li>
+      <li>Fontvelger med 6 Google Fonts (Victor Mono, Inter, Nunito, m.fl.)</li>
+      <li>Kursiv-toggle i Notat-kortet</li>
+      <li>Global skriftstørrelse (Liten / Normal / Stor / Ekstra stor)</li>
+      <li>Per-widget skriftstørrelse med S/M/L/XL-knapper</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v1.3</div>
     <div class="logg-dato">7. mai 2026</div>
     <ul>
@@ -825,6 +849,18 @@ const BRUKERVEILEDNING_HTML = `
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Trykk på <strong>●○○</strong>-knappen for å strekke et kort over 2 eller 3 kolonner. Layouten huskes automatisk.</p>
   <p>Vil du skjule et kort du ikke bruker? Trykk <strong>⊞ Widgets</strong> øverst til høyre og fjern avhukingen.</p>
+
+  <h4>Tema</h4>
+  <p>Åpne <strong>Klasserom-menyen</strong> (tannhjulet øverst til venstre) og hold musen over <strong>🎨 Tema</strong>. Velg blant tre standardtemaer (Lyst, Mørkt, Høy kontrast) eller åtte kreative temaer: Under vann, På fjellet, I skogen, I en vulkan, I eventyrland, Matrix, Cyberspace og Equestria. Temaet lagres automatisk.</p>
+
+  <h4>Font</h4>
+  <p>Hold musen over <strong>🔤 Font</strong> i Klasserom-menyen. Velg blant systemstandard og seks Google Fonts — inkludert <em>Victor Mono</em> (monospace), <em>Caveat</em> (håndskrevet) og <em>Playfair Display</em> (serif). Fonten lastes dynamisk og lagres til neste gang.</p>
+
+  <h4>Skriftstørrelse</h4>
+  <p>Hold musen over <strong>📏 Skriftstørrelse</strong> i Klasserom-menyen. Under <strong>Alle widgets</strong> setter du global størrelse (Liten 12px → Ekstra stor 19px). Under <strong>Enkelt widget</strong> kan du justere hvert kort individuelt med S/M/L/XL-knapper uten å lukke menyen.</p>
+
+  <h4>Kursiv tekst i Notat</h4>
+  <p>Trykk <strong><em>𝐼</em></strong>-knappen øverst i Notat-kortet for å slå kursiv tekst av og på. Innstillingen lagres automatisk.</p>
 
   <h4>Tavlemodus</h4>
   <p>Trykk <strong>🖥 Tavle</strong> (eller <kbd>b</kbd>) for en helt svart skjerm — nyttig når du vil fokusere elevoppmerksomheten. Klikk hvor som helst eller trykk <kbd>Esc</kbd> for å avslutte.</p>
@@ -925,6 +961,71 @@ function settTema(tema) {
   document.querySelectorAll('.tema-valg').forEach(el => {
     el.classList.toggle('aktiv', el.dataset.tema === tema);
   });
+}
+
+// ===================== Font =====================
+const FONTER = {
+  'system':      { css: 'system-ui,-apple-system,"Segoe UI",sans-serif', url: null },
+  'victor-mono': { css: '"Victor Mono",monospace', url: 'https://fonts.googleapis.com/css2?family=Victor+Mono:ital,wght@0,400;0,700;1,400&display=swap' },
+  'inter':       { css: '"Inter",sans-serif', url: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap' },
+  'nunito':      { css: '"Nunito",sans-serif', url: 'https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap' },
+  'roboto-slab': { css: '"Roboto Slab",serif', url: 'https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;700&display=swap' },
+  'playfair':    { css: '"Playfair Display",serif', url: 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap' },
+  'caveat':      { css: '"Caveat",cursive', url: 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap' },
+};
+
+function settFont(fontKey) {
+  const f = FONTER[fontKey] ?? FONTER['system'];
+  if (f.url && !document.querySelector(`link[data-font="${fontKey}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = f.url; link.dataset.font = fontKey;
+    document.head.appendChild(link);
+  }
+  document.documentElement.style.setProperty('--font', f.css);
+  state.font = fontKey;
+  saveState();
+  document.querySelectorAll('.font-valg').forEach(el => {
+    el.classList.toggle('aktiv', el.dataset.font === fontKey);
+  });
+}
+
+const STØRRELSER = {
+  'liten':  '12px',
+  'normal': '14px',
+  'stor':   '16px',
+  'xl':     '19px',
+};
+
+function settSkriftstørrelse(key) {
+  const px = STØRRELSER[key] ?? STØRRELSER['normal'];
+  document.documentElement.style.setProperty('--font-size', px);
+  state.skrift_størrelse = key;
+  saveState();
+  document.querySelectorAll('.størrelse-valg').forEach(el => {
+    el.classList.toggle('aktiv', el.dataset.størrelse === key);
+  });
+}
+
+function settWidgetSkriftstørrelse(widgetId, key) {
+  const card = document.getElementById(widgetId);
+  if (!card) return;
+  const px = STØRRELSER[key] ?? null;
+  card.style.fontSize = px ?? '';
+  if (!state.widget_størrelser) state.widget_størrelser = {};
+  if (key === 'normal') {
+    delete state.widget_størrelser[widgetId];
+  } else {
+    state.widget_størrelser[widgetId] = key;
+  }
+  saveState();
+  document.querySelectorAll(`.widget-str-valg[data-widget="${widgetId}"]`).forEach(btn => {
+    btn.classList.toggle('aktiv', btn.dataset.størrelse === key);
+  });
+}
+
+function applyWidgetStørrelser() {
+  const map = state.widget_størrelser ?? {};
+  Object.entries(map).forEach(([id, key]) => settWidgetSkriftstørrelse(id, key));
 }
 
 // ===================== Event setup =====================
@@ -1088,6 +1189,24 @@ function settOppHendelser() {
       klasseromDrop.classList.add('hidden');
     };
   });
+  document.querySelectorAll('.font-valg').forEach(el => {
+    el.onclick = () => {
+      settFont(el.dataset.font);
+      klasseromDrop.classList.add('hidden');
+    };
+  });
+  document.querySelectorAll('.størrelse-valg').forEach(el => {
+    el.onclick = () => {
+      settSkriftstørrelse(el.dataset.størrelse);
+      klasseromDrop.classList.add('hidden');
+    };
+  });
+  document.querySelectorAll('.widget-str-valg').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      settWidgetSkriftstørrelse(btn.dataset.widget, btn.dataset.størrelse);
+    };
+  });
 
   // Info-modal lukk
   document.getElementById('btn-info-lukk').onclick = lukkInfoModal;
@@ -1164,6 +1283,9 @@ function init() {
   renderTimer();
   applyLayout();
   settTema(state.tema ?? 'lyst');
+  settFont(state.font ?? 'system');
+  settSkriftstørrelse(state.skrift_størrelse ?? 'normal');
+  applyWidgetStørrelser();
   settOppHendelser();
   settOppDragOgDrop();
 }

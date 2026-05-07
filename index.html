@@ -15,11 +15,123 @@
       <div class="kl-dropdown-item" id="btn-åpne-logg">📋 Oppdateringslogg</div>
       <div class="kl-dropdown-item" id="btn-åpne-guide">❓ Brukerveiledning</div>
       <div class="kl-dropdown-sep"></div>
-      <div class="kl-dropdown-label">Tema</div>
-      <div class="kl-dropdown-item tema-valg" data-tema="lyst">☀️ Lyst</div>
-      <div class="kl-dropdown-item tema-valg" data-tema="mørkt">🌙 Mørkt</div>
-      <div class="kl-dropdown-item tema-valg" data-tema="grønt">🌿 Grønt</div>
-      <div class="kl-dropdown-item tema-valg" data-tema="kontrast">⬛ Høy kontrast</div>
+      <div class="kl-dropdown-item kl-has-submenu">
+        🎨 Tema
+        <div class="kl-submenu">
+          <div class="kl-dropdown-label">Standard</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="lyst">☀️ Lyst</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="mørkt">🌙 Mørkt</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="kontrast">⬛ Høy kontrast</div>
+          <div class="kl-dropdown-sep"></div>
+          <div class="kl-dropdown-label">Eventyr</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="under-vann">🌊 Under vann</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="fjellet">🏔️ På fjellet</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="skogen">🌲 I skogen</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="vulkan">🌋 I en vulkan</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="eventyrland">🧚 I eventyrland</div>
+          <div class="kl-dropdown-sep"></div>
+          <div class="kl-dropdown-label">Digital</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="matrix">💊 Matrix</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="cyberspace">🔷 Cyberspace</div>
+          <div class="kl-dropdown-item tema-valg" data-tema="equestria">🦄 Equestria</div>
+        </div>
+      </div>
+      <div class="kl-dropdown-item kl-has-submenu">
+        🔤 Font
+        <div class="kl-submenu">
+          <div class="kl-dropdown-item font-valg" data-font="system">🖥 System standard</div>
+          <div class="kl-dropdown-item font-valg" data-font="victor-mono">💻 Victor Mono</div>
+          <div class="kl-dropdown-item font-valg" data-font="inter">✦ Inter</div>
+          <div class="kl-dropdown-item font-valg" data-font="nunito">○ Nunito</div>
+          <div class="kl-dropdown-item font-valg" data-font="roboto-slab">⌂ Roboto Slab</div>
+          <div class="kl-dropdown-item font-valg" data-font="playfair">✒ Playfair Display</div>
+          <div class="kl-dropdown-item font-valg" data-font="caveat">✍ Caveat</div>
+        </div>
+      </div>
+      <div class="kl-dropdown-item kl-has-submenu">
+        📏 Skriftstørrelse
+        <div class="kl-submenu kl-submenu-bred">
+          <div class="kl-dropdown-label">Alle widgets</div>
+          <div class="kl-dropdown-item størrelse-valg" data-størrelse="liten">🔡 Liten</div>
+          <div class="kl-dropdown-item størrelse-valg" data-størrelse="normal">🔤 Normal</div>
+          <div class="kl-dropdown-item størrelse-valg" data-størrelse="stor">🔠 Stor</div>
+          <div class="kl-dropdown-item størrelse-valg" data-størrelse="xl">⬜ Ekstra stor</div>
+          <div class="kl-dropdown-sep"></div>
+          <div class="kl-dropdown-label">Enkelt widget</div>
+          <div class="widget-str-rad" data-widget="card-elever">
+            <span>Elever</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-elever" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-elever" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-elever" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-elever" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-grupper">
+            <span>Grupper</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-grupper" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-grupper" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-grupper" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-grupper" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-tilfeldig">
+            <span>Tilfeldig elev</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-tilfeldig" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-tilfeldig" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-tilfeldig" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-tilfeldig" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-ordenselev">
+            <span>Ordenselev</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-ordenselev" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ordenselev" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ordenselev" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ordenselev" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-ulv">
+            <span>Ulv og sauer</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-ulv" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ulv" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ulv" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-ulv" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-timer">
+            <span>Timer</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-timer" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-timer" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-timer" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-timer" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-notat">
+            <span>Notat</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+          <div class="widget-str-rad" data-widget="card-dagsplan">
+            <span>Dagsplan</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-dagsplan" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-dagsplan" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-dagsplan" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-dagsplan" data-størrelse="xl">XL</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   <div id="header-dato"></div>
@@ -140,6 +252,7 @@
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>📝 Notat</h2>
       <div class="card-controls">
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-notat-kursiv" title="Kursiv tekst">𝐼</button>
         <button class="btn-span" onclick="toggleSpan('card-notat')" title="Endre bredde"><span class="span-dots" id="span-card-notat">●○○</span></button>
       </div>
     </div>
