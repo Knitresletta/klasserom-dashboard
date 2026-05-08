@@ -205,6 +205,7 @@
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>⭐ Ordenselever</h2>
       <div class="card-controls">
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-rediger-ordenselev" title="Rediger backlog">📝</button>
         <button class="btn-span" onclick="toggleSpan('card-ordenselev')" title="Endre bredde"><span class="span-dots" id="span-card-ordenselev">●○○</span></button>
       </div>
     </div>
@@ -213,18 +214,20 @@
     <button class="btn btn-amber w-full" id="btn-ordenselev" title="Trekk ordenselever (o)">Trekk ordenselever</button>
   </div>
 
-  <!-- Card: Ulv -->
+  <!-- Card: Klassebamse -->
   <div class="card" id="card-ulv">
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
-      <h2>🐺 Ulv</h2>
+      <h2>Klassebamse</h2>
       <div class="card-controls">
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-ulv-rename" title="Endre navn">✏️</button>
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-rediger-ulv" title="Rediger backlog">📝</button>
         <button class="btn-span" onclick="toggleSpan('card-ulv')" title="Endre bredde"><span class="span-dots" id="span-card-ulv">●○○</span></button>
       </div>
     </div>
-    <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som får bamsen hjem</div>
+    <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som tar med klassebamse hjem</div>
     <div id="ulv-backlog-count" class="backlog-count hidden"></div>
-    <button class="btn btn-ghost w-full" id="btn-ulv" title="Trekk ulv (u)">Trekk ulv</button>
+    <button class="btn btn-ghost w-full" id="btn-ulv" title="Trekk klassebamse (u)">Trekk klassebamse</button>
   </div>
 
   <!-- Card: Timer -->
@@ -352,7 +355,7 @@
     <div class="modal-list" id="nullstill-liste">
       <div class="modal-list-item" data-action="tilfeldig"><span>🎲 Tilfeldig-trekk</span></div>
       <div class="modal-list-item" data-action="ordenselev"><span>⭐ Ordenselever-trekk</span></div>
-      <div class="modal-list-item" data-action="ulv"><span>🐺 Ulv-trekk</span></div>
+      <div class="modal-list-item" data-action="ulv"><span>Klassebamse-trekk</span></div>
       <div class="modal-list-item" data-action="grupper"><span>👥 Grupper</span></div>
       <div class="modal-list-item" data-action="timer"><span>⏱ Timer</span></div>
       <div class="modal-list-item" data-action="notat"><span>📝 Notat</span></div>
@@ -370,6 +373,26 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btn-fjern-avbryt">Avbryt</button>
       <button class="btn btn-danger" id="btn-fjern-bekreft">Fjern valgte</button>
+    </div>
+  </div>
+
+  <!-- Rename klassebamse -->
+  <div id="modal-ulv-rename" class="modal hidden">
+    <h3>Endre navn på klassebamsen</h3>
+    <input type="text" id="rename-input" class="modal-input" maxlength="30" placeholder="Nytt navn…" />
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-rename-avbryt">Avbryt</button>
+      <button class="btn btn-primary" id="btn-rename-lagre">Lagre</button>
+    </div>
+  </div>
+
+  <!-- Backlog-editor -->
+  <div id="modal-rediger-backlog" class="modal hidden">
+    <h3 id="rediger-backlog-tittel">Rediger backlog</h3>
+    <p style="font-size:.85rem;opacity:.7;margin-bottom:.75rem">Klikk på en elev for å markere dem som allerede brukt. Grå = brukt, hvit = tilgjengelig.</p>
+    <div id="rediger-backlog-chips" class="chip-grid"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btn-rediger-backlog-lukk">Ferdig</button>
     </div>
   </div>
 </div>

@@ -21,7 +21,7 @@ const WIDGET_NAVN = {
   'card-grupper':    'Grupper',
   'card-tilfeldig':  '🎲 Tilfeldig elev',
   'card-ordenselev': '⭐ Ordenselever',
-  'card-ulv':        '🐺 Ulv',
+  'card-ulv':        'Klassebamse',
   'card-timer':      '⏱ Timer',
   'card-notat':      '📝 Notat',
   'card-dagsplan':   '📋 Dagsplan',
@@ -56,6 +56,7 @@ function defaultState() {
     ordenselev_valgte:   [],
     ulv_backlog:         [],
     ulv_valgt:           null,
+    ulv_navn:            'Klassebamse',
     tilfeldig_backlog:   [],
     tilfeldig_valgt:     null,
     grupper:             null,
@@ -306,7 +307,7 @@ function trekkUlv() {
   if (!state.ulv_backlog.includes(state.ulv_valgt)) state.ulv_backlog.push(state.ulv_valgt);
   saveState();
   renderUlv();
-  notify(`🐺 ${state.ulv_valgt} får bamsen hjem!`);
+  notify(`${state.ulv_valgt} tar med ${state.ulv_navn.toLowerCase()} hjem!`);
 }
 
 function renderTilfeldig() {
@@ -348,14 +349,17 @@ function renderOrdenselev() {
 }
 
 function renderUlv() {
-  const vis = document.getElementById('ulv-vis');
-  const bl  = document.getElementById('ulv-backlog-count');
+  const vis  = document.getElementById('ulv-vis');
+  const bl   = document.getElementById('ulv-backlog-count');
+  const navn = state.ulv_navn || 'Klassebamse';
+  document.querySelector('#card-ulv h2').textContent = navn;
+  document.getElementById('btn-ulv').textContent = `Trekk ${navn.toLowerCase()}`;
   if (state.ulv_valgt) {
     vis.className = 'draw-result ulv-result';
-    vis.innerHTML = `<div class="drawn-name">🐺 ${esc(state.ulv_valgt)}</div>`;
+    vis.innerHTML = `<div class="drawn-name">${esc(state.ulv_valgt)}</div>`;
   } else {
     vis.className   = 'draw-placeholder';
-    vis.textContent = 'Trykk Trekk for å velge hvem som får bamsen hjem';
+    vis.textContent = `Trykk Trekk for å velge hvem som tar med ${navn.toLowerCase()} hjem`;
   }
   if (state.ulv_backlog.length) {
     bl.className   = 'backlog-count';
@@ -773,6 +777,15 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v1.5</div>
+    <div class="logg-dato">7. mai 2026</div>
+    <ul>
+      <li>Backlog-editor for ordenselev og klassebamse: klikk 📝 for å markere hvem som allerede er brukt</li>
+      <li>Widgeten "Ulv" heter nå "Klassebamse" som standard</li>
+      <li>Tilpassbart bamse-navn: klikk ✏️ i Klassebamse-kortet for å gi bamsen et eget navn</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v1.4</div>
     <div class="logg-dato">7. mai 2026</div>
     <ul>
@@ -831,8 +844,14 @@ const BRUKERVEILEDNING_HTML = `
   <p><strong>🎲 Tilfeldig elev</strong> — trykk <strong>Trekk</strong> for å velge en tilfeldig elev fra listen. Vanlig trekk unngår å velge samme elev to ganger på rad.</p>
   <p><strong>Trekk (bl)</strong> — trekker uten repetisjon (backlog). Hver elev trekkes én gang før noen trekkes på nytt. Antall trukket vises under knappen.</p>
   <p><strong>⭐ Ordenselever</strong> — velger to elever som har ordenselev-ansvar. Bruker også backlog, slik at alle rekker å ha vært ordenselev før noen gjentas.</p>
-  <p><strong>🐺 Ulv</strong> — velger hvem som får bamsen (eller en annen gjenstand) med hjem. Også med backlog.</p>
+  <p><strong>Klassebamse</strong> — velger hvem som får bamsen (eller en annen gjenstand) med hjem. Også med backlog.</p>
   <p>Vil du nullstille en backlog? Trykk <strong>⚙️ Nullstill…</strong> nederst til venstre.</p>
+
+  <h4>📝 Redigere backlog for ordenselev / klassebamse</h4>
+  <p>Trykk på blyant-ikonet (📝) i kortets hjørne. Du ser alle elevene som chips — grå chips er allerede «brukt». Trykk på en elev for å sette eller fjerne «brukt»-markeringen. Nyttig hvis du har mistet lokal data og trenger å rekonstruere hvem som har vært ordenselev eller hatt med bamsen.</p>
+
+  <h4>✏️ Gi klassebamsen et eget navn</h4>
+  <p>Trykk på blyant-ikonet (✏️) i Klassebamse-kortets hjørne, skriv inn det nye navnet og trykk Lagre. Navnet huskes selv etter at du lukker nettleseren.</p>
 
   <h4>Grupper</h4>
   <p>Trykk <strong>🎲 Del inn</strong> i Grupper-kortet (eller tasten <kbd>g</kbd>). Skriv inn antall grupper, og elevene fordeles tilfeldig. Gruppefarger vises også i elevlisten. Trykk <strong>✕</strong> for å fjerne gruppeinndelingen.</p>
@@ -1065,6 +1084,11 @@ function settOppHendelser() {
   document.getElementById('btn-ordenselev').onclick       = trekkOrdenselev;
   document.getElementById('btn-ulv').onclick              = trekkUlv;
 
+  // Backlog-editor
+  document.getElementById('btn-rediger-ordenselev').onclick = () => åpneRedigerBacklog('ordenselev');
+  document.getElementById('btn-rediger-ulv').onclick        = () => åpneRedigerBacklog('ulv');
+  document.getElementById('btn-rediger-backlog-lukk').onclick = lukkModal;
+
   // Dagsplan
   document.getElementById('btn-dagsplan-legg-til').onclick = () => {
     document.getElementById('input-dagsplan-punkt').value = '';
@@ -1269,6 +1293,57 @@ function settOppHendelser() {
 }
 
 // ===================== Init =====================
+// ===================== Rename Klassebamse =====================
+function settOppRename() {
+  document.getElementById('btn-ulv-rename').onclick = () => {
+    document.getElementById('rename-input').value = state.ulv_navn || 'Klassebamse';
+    åpneModal('modal-ulv-rename');
+  };
+  document.getElementById('btn-rename-avbryt').onclick = lukkModal;
+  document.getElementById('btn-rename-lagre').onclick = () => {
+    const nyttNavn = document.getElementById('rename-input').value.trim();
+    if (nyttNavn) {
+      state.ulv_navn = nyttNavn;
+      saveState();
+      renderUlv();
+    }
+    lukkModal();
+  };
+  inputEnter('rename-input', () => document.getElementById('btn-rename-lagre').click());
+}
+
+// ===================== Backlog-editor =====================
+function åpneRedigerBacklog(type) {
+  const erOrden   = type === 'ordenselev';
+  const backlogKey = erOrden ? 'ordenselev_backlog' : 'ulv_backlog';
+  const tittel     = erOrden ? 'Rediger ordenselev-backlog' : `Rediger ${state.ulv_navn || 'Klassebamse'}-backlog`;
+
+  document.getElementById('rediger-backlog-tittel').textContent = tittel;
+
+  const chips = document.getElementById('rediger-backlog-chips');
+  chips.innerHTML = '';
+  (state.elever || []).forEach(navn => {
+    const erBrukt = state[backlogKey].includes(navn);
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (erBrukt ? ' brukt' : '');
+    chip.textContent = navn;
+    chip.onclick = () => {
+      if (state[backlogKey].includes(navn)) {
+        state[backlogKey] = state[backlogKey].filter(n => n !== navn);
+        chip.classList.remove('brukt');
+      } else {
+        state[backlogKey].push(navn);
+        chip.classList.add('brukt');
+      }
+      saveState();
+      if (erOrden) renderOrdenselev(); else renderUlv();
+    };
+    chips.appendChild(chip);
+  });
+
+  åpneModal('modal-rediger-backlog');
+}
+
 function init() {
   oppdaterDato();
   hentVær();
@@ -1287,6 +1362,7 @@ function init() {
   settSkriftstørrelse(state.skrift_størrelse ?? 'normal');
   applyWidgetStørrelser();
   settOppHendelser();
+  settOppRename();
   settOppDragOgDrop();
 }
 

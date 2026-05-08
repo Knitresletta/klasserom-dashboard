@@ -921,6 +921,32 @@ main.drag-active::before {
   to   { transform: translateX(0);   opacity: 1; }
 }
 
+/* ===================== Chip grid (backlog-editor) ===================== */
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: .5rem;
+}
+.chip {
+  padding: .3rem .75rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  font-size: .9rem;
+  transition: background .15s, color .15s, border-color .15s;
+  user-select: none;
+}
+.chip.brukt {
+  background: var(--primary-l);
+  border-color: var(--primary);
+  color: var(--primary);
+  opacity: .7;
+}
+.chip.brukt::after { content: ' ✓'; }
+#modal-rediger-backlog { width: min(520px, 92vw); }
+
 /* ===================== Responsive ===================== */
 @media (max-width: 960px) {
   main {
