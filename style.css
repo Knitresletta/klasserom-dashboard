@@ -963,6 +963,30 @@ main.drag-active::before {
 .chip.brukt::after { content: ' ✓'; }
 #modal-rediger-backlog { width: min(520px, 92vw); }
 
+/* ===================== Bilde-widget ===================== */
+.bilde-vis { display: flex; flex-direction: column; gap: 8px; }
+.bilde-slipp {
+  display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--border); border-radius: 8px;
+  padding: 24px; cursor: pointer; text-align: center;
+  color: var(--text-dim); font-size: 0.9rem;
+}
+.bilde-slipp:hover { border-color: var(--accent); }
+
+/* ===================== Begrensning-modal ===================== */
+.modal-boks {
+  background: var(--card); border-radius: 12px; padding: 24px;
+  min-width: 320px; max-width: 500px; display: flex; flex-direction: column; gap: 12px;
+}
+.begrensning-input { display: flex; gap: 8px; flex-wrap: wrap; }
+.begrensning-input select { flex: 1; }
+#begrensning-liste { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+#begrensning-liste li {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 8px; background: var(--bg); border-radius: 6px;
+}
+.modal-knapper { display: flex; gap: 8px; justify-content: flex-end; }
+
 /* ===================== Responsive ===================== */
 @media (max-width: 960px) {
   main {

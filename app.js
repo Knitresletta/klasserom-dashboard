@@ -25,6 +25,12 @@ const WIDGET_NAVN = {
   'card-timer':      '⏱ Timer',
   'card-notat':      '📝 Notat',
   'card-dagsplan':   '📋 Dagsplan',
+  'card-bilde':      '🖼 Bilde',
+};
+
+const CONFIG = {
+  github_feedback_token: 'ghp_XXXXXXXXXXXXXXXXXXXXXX',
+  github_feedback_repo:  'knitresletta/klasserom-web',
 };
 
 const VÆR_LAT = 60.33;
@@ -68,6 +74,8 @@ function defaultState() {
     skrift_størrelse: 'normal',
     widget_størrelser: {},
     notat_kursiv: false,
+    gruppe_begrensninger: [],
+    bilde_data: null,
     widget_layout: [
       { id: 'card-elever',     col: 1, span: 1 },
       { id: 'card-grupper',    col: 1, span: 1 },
@@ -77,6 +85,7 @@ function defaultState() {
       { id: 'card-timer',      col: 3, span: 1 },
       { id: 'card-notat',      col: 3, span: 1 },
       { id: 'card-dagsplan',   col: 3, span: 1 },
+      { id: 'card-bilde',      col: 3, span: 1 },
     ],
   };
 }
@@ -186,7 +195,6 @@ function fjernElev(idx) {
   const navn = state.elever[idx];
   if (!navn) return;
   state.elever = state.elever.filter((_, i) => i !== idx);
-  ryddBackloger(new Set([navn]));
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -194,7 +202,6 @@ function fjernElev(idx) {
 
 function fjernEleverBatch(fjernSett) {
   state.elever = state.elever.filter(e => !fjernSett.has(e));
-  ryddBackloger(fjernSett);
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -239,6 +246,7 @@ function renderElever() {
         <button class="elev-slett" onclick="fjernElev(${i})" title="Fjern ${esc(navn)}">✕</button>
       </div>`;
   }).join('');
+  oppdaterBegrensningSelecter();
 }
 
 // ===================== Draws =====================
@@ -544,9 +552,21 @@ function lagGrupper(antall) {
     notify(`For mange grupper — bare ${state.elever.length} elever inne`, 'warning');
     return;
   }
-  const shufflet = [...state.elever].sort(() => Math.random() - .5);
-  const grupper  = Array.from({ length: antall }, () => []);
-  shufflet.forEach((e, i) => grupper[i % antall].push(e));
+  const begrensninger = state.gruppe_begrensninger ?? [];
+  let grupper = null;
+  for (let forsøk = 0; forsøk < 200; forsøk++) {
+    const shufflet = [...state.elever].sort(() => Math.random() - .5);
+    const kandidat = Array.from({ length: antall }, () => []);
+    shufflet.forEach((e, i) => kandidat[i % antall].push(e));
+    const ok = begrensninger.every(([a, b]) =>
+      !kandidat.some(g => g.includes(a) && g.includes(b))
+    );
+    if (ok) { grupper = kandidat; break; }
+  }
+  if (!grupper) {
+    notify('Klarte ikke lage grupper uten å bryte begrensningene — prøv færre par eller flere grupper', 'warning');
+    return;
+  }
   state.grupper = grupper;
   saveState();
   renderGrupper();
@@ -635,8 +655,6 @@ function applyLayout() {
       state.widget_layout.push({ ...def });
     }
   });
-
-  document.querySelectorAll('.col-wrapper').forEach(w => { w.innerHTML = ''; });
 
   const skjult = state.widget_hidden ?? [];
   state.widget_layout.forEach(({ id, col, span }) => {
@@ -800,6 +818,17 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v1.8</div>
+    <div class="logg-dato">8. mai 2026</div>
+    <ul>
+      <li>Fikset: widgets forsvant etter drag-and-drop</li>
+      <li>Fikset: backlogs ble slettet når elever ble fjernet — backlogs lever nå uavhengig av elevlisten</li>
+      <li>Ny funksjon: Gruppebegrensning — legg inn navnepar som aldri skal havne i samme gruppe (⛔ Par)</li>
+      <li>Ny widget: Bilde — last opp bilde fra disk eller lim inn fra utklippstavle</li>
+      <li>Ny funksjon: Send tilbakemelding direkte til utvikler fra menyen</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v1.7</div>
     <div class="logg-dato">8. mai 2026</div>
     <ul>
@@ -895,6 +924,9 @@ const BRUKERVEILEDNING_HTML = `
   <h4>Grupper</h4>
   <p>Trykk <strong>🎲 Del inn</strong> i Grupper-kortet (eller tasten <kbd>g</kbd>). Skriv inn antall grupper, og elevene fordeles tilfeldig. Gruppefarger vises også i elevlisten. Trykk <strong>✕</strong> for å fjerne gruppeinndelingen.</p>
 
+  <h4>⛔ Gruppebegrensning</h4>
+  <p>Klikk <strong>⛔ Par</strong> i Grupper-kortets hjørne for å åpne begrensningslisten. Velg to elever fra nedtrekksmenyene og klikk <strong>Legg til</strong>. Paret vil aldri havne i samme gruppe. Du kan legge til så mange par du vil. Fjern et par ved å klikke <strong>✕</strong> ved siden av det.</p>
+
   <h4>Timer</h4>
   <p>Standard er 5 minutter. Trykk <strong>Sett tid</strong> (eller <kbd>s</kbd>) for å velge en annen varighet (1–60 min). Start og stopp med <strong>▶ Start</strong> (eller <kbd>t</kbd>). En lyd spilles av når tiden er ute.</p>
 
@@ -903,6 +935,9 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
+
+  <h4>🖼 Bilde-widget</h4>
+  <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde). Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette det.</p>
 
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Trykk på <strong>●○○</strong>-knappen for å strekke et kort over 2 eller 3 kolonner. Layouten huskes automatisk.</p>
@@ -939,6 +974,9 @@ const BRUKERVEILEDNING_HTML = `
     <li><kbd>n</kbd> — Nullstill…</li>
     <li><kbd>Esc</kbd> — Lukk åpne vinduer</li>
   </ul>
+
+  <h4>💬 Send tilbakemelding</h4>
+  <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Velg type (feil, ønsket funksjon eller annet), skriv en kort beskrivelse og klikk <strong>Send</strong>. Tilbakemeldingen sendes direkte til utvikleren.</p>
 
   <h4>Lagring</h4>
   <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>`;
@@ -1383,6 +1421,147 @@ function åpneRedigerBacklog(type) {
   åpneModal('modal-rediger-backlog');
 }
 
+// ===================== Bilde-widget =====================
+function setupBilde() {
+  renderBilde();
+  document.addEventListener('paste', e => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        lesBildefil(item.getAsFile());
+        break;
+      }
+    }
+  });
+}
+
+function renderBilde() {
+  const img    = document.getElementById('bilde-img');
+  const label  = document.getElementById('bilde-label');
+  const fjernK = document.getElementById('bilde-fjern');
+  if (!img) return;
+  if (state.bilde_data) {
+    img.src = state.bilde_data;
+    img.style.display = '';
+    label.style.display = 'none';
+    fjernK.style.display = '';
+  } else {
+    img.style.display = 'none';
+    label.style.display = '';
+    fjernK.style.display = 'none';
+  }
+}
+
+function lastOppBilde(input) {
+  const fil = input.files?.[0];
+  if (fil) lesBildefil(fil);
+}
+
+function lesBildefil(fil) {
+  if (fil.size > 2 * 1024 * 1024) {
+    notify('Bildet er for stort — maks 2 MB', 'warning');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    state.bilde_data = e.target.result;
+    saveState();
+    renderBilde();
+  };
+  reader.readAsDataURL(fil);
+}
+
+function fjernBilde() {
+  state.bilde_data = null;
+  saveState();
+  renderBilde();
+}
+
+// ===================== Gruppebegrensning =====================
+function leggTilBegrensning(navn1, navn2) {
+  if (!navn1 || !navn2 || navn1 === navn2) return;
+  const allerede = (state.gruppe_begrensninger ?? []).some(
+    ([a, b]) => (a === navn1 && b === navn2) || (a === navn2 && b === navn1)
+  );
+  if (allerede) { notify('Dette paret er allerede lagt til', 'warning'); return; }
+  state.gruppe_begrensninger = [...(state.gruppe_begrensninger ?? []), [navn1, navn2]];
+  saveState();
+  renderBegrensninger();
+}
+
+function fjernBegrensning(idx) {
+  state.gruppe_begrensninger.splice(idx, 1);
+  saveState();
+  renderBegrensninger();
+}
+
+function renderBegrensninger() {
+  const liste = document.getElementById('begrensning-liste');
+  if (!liste) return;
+  liste.innerHTML = '';
+  (state.gruppe_begrensninger ?? []).forEach(([a, b], i) => {
+    const li = document.createElement('li');
+    li.textContent = `${a} + ${b}`;
+    const slett = document.createElement('button');
+    slett.textContent = '✕';
+    slett.onclick = () => fjernBegrensning(i);
+    li.appendChild(slett);
+    liste.appendChild(li);
+  });
+}
+
+function åpneBegrensningModal() {
+  document.getElementById('begrensning-modal').style.display = 'flex';
+  renderBegrensninger();
+}
+
+function oppdaterBegrensningSelecter() {
+  ['begr-navn1', 'begr-navn2'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const val = sel.value;
+    sel.innerHTML = state.elever.map(e => `<option value="${e}">${e}</option>`).join('');
+    if (state.elever.includes(val)) sel.value = val;
+  });
+}
+
+// ===================== Tilbakemeldingsverktøy =====================
+function åpneTilbakemeldingModal() {
+  document.getElementById('feedback-modal').style.display = 'flex';
+}
+
+async function sendTilbakemelding() {
+  const type  = document.getElementById('feedback-type').value;
+  const tekst = document.getElementById('feedback-tekst').value.trim();
+  if (!tekst) { notify('Skriv inn en beskrivelse først', 'warning'); return; }
+
+  const titler  = { bug: '🐛 Feil', ønske: '✨ Ønske', annet: '💬 Annet' };
+  const etiketter = { bug: ['bug'], ønske: ['enhancement'], annet: [] };
+
+  try {
+    const svar = await fetch(`https://api.github.com/repos/${CONFIG.github_feedback_repo}/issues`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CONFIG.github_feedback_token}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title:  `${titler[type]}: ${tekst.slice(0, 60)}`,
+        body:   `**Type:** ${titler[type]}\n\n${tekst}\n\n---\n*Sendt fra klasserom-web*`,
+        labels: etiketter[type],
+      }),
+    });
+    if (!svar.ok) throw new Error(svar.status);
+    notify('Tilbakemelding sendt! Takk 🙏');
+    document.getElementById('feedback-tekst').value = '';
+    document.getElementById('feedback-modal').style.display = 'none';
+  } catch (err) {
+    notify('Kunne ikke sende — sjekk nettforbindelsen', 'error');
+  }
+}
+
 function init() {
   oppdaterDato();
   hentVær();
@@ -1395,6 +1574,7 @@ function init() {
   renderDagsplan();
   setupNotat();
   renderTimer();
+  setupBilde();
   applyLayout();
   settTema(state.tema ?? 'lyst');
   settFont(state.font ?? 'system');
