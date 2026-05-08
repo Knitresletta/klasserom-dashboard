@@ -695,6 +695,14 @@ main.drag-active::before {
   pointer-events: none;
   z-index: 50;
 }
+.drop-indikator {
+  height: 3px;
+  background: var(--primary);
+  border-radius: 2px;
+  grid-column: 1 / -1;
+  pointer-events: none;
+  margin: -6px 0;
+}
 
 /* ===================== Action bar ===================== */
 #action-bar {

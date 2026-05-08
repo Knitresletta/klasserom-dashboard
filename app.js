@@ -650,6 +650,13 @@ function applyLayout() {
     const dots = document.getElementById(`span-${id}`);
     if (dots) dots.textContent = ['●○○', '●●○', '●●●'][span - 1] ?? '●○○';
   });
+
+  // Synkroniser DOM-rekkefølge til widget_layout-arrayet (styrer vertikal stabling)
+  const mainEl = document.querySelector('main');
+  state.widget_layout.forEach(({ id }) => {
+    const el = document.getElementById(id);
+    if (el) mainEl.appendChild(el);
+  });
 }
 
 function renderWidgetMeny() {
@@ -710,9 +717,22 @@ function kolonneFraMus(clientX) {
   return 3;
 }
 
+function posisjonFraMus(clientY, dragId) {
+  for (let i = 0; i < state.widget_layout.length; i++) {
+    const { id } = state.widget_layout[i];
+    if (id === dragId) continue;
+    const el = document.getElementById(id);
+    if (!el || el.style.display === 'none') continue;
+    const rect = el.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return i;
+  }
+  return state.widget_layout.length;
+}
+
 function settOppDragOgDrop() {
   const main = document.querySelector('main');
   let dragId = null;
+  let indikatorEl = null;
 
   document.querySelectorAll('.drag-handle').forEach(handle => {
     const card = handle.closest('.card');
@@ -738,20 +758,41 @@ function settOppDragOgDrop() {
   main.addEventListener('dragover', e => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    if (!dragId) return;
+
+    const nyIndeks = posisjonFraMus(e.clientY, dragId);
+
+    if (!indikatorEl) {
+      indikatorEl = document.createElement('div');
+      indikatorEl.className = 'drop-indikator';
+    }
+
+    const cards = [...main.querySelectorAll('.card:not(.dragging)')];
+    const referanse = cards[nyIndeks] ?? null;
+    if (referanse) {
+      main.insertBefore(indikatorEl, referanse);
+    } else {
+      main.appendChild(indikatorEl);
+    }
   });
 
   main.addEventListener('drop', e => {
     e.preventDefault();
     if (!dragId) return;
+
     const nyKolonne = kolonneFraMus(e.clientX);
-    const entry = state.widget_layout.find(w => w.id === dragId);
-    if (entry && entry.col !== nyKolonne) {
-      entry.col = nyKolonne;
-      // Klamp span ved behov
-      entry.col = Math.min(entry.col, 4 - entry.span);
-      saveState();
-      applyLayout();
-    }
+    let nyIndeks    = posisjonFraMus(e.clientY, dragId);
+
+    const gammelIndeks = state.widget_layout.findIndex(w => w.id === dragId);
+    const entry = { ...state.widget_layout[gammelIndeks] };
+    entry.col = Math.min(nyKolonne, 4 - entry.span);
+
+    state.widget_layout.splice(gammelIndeks, 1);
+    if (nyIndeks > gammelIndeks) nyIndeks--;
+    state.widget_layout.splice(nyIndeks, 0, entry);
+
+    saveState();
+    applyLayout();
     avsluttDrag();
   });
 
@@ -763,6 +804,7 @@ function settOppDragOgDrop() {
       if (el) { el.classList.remove('dragging'); el.draggable = false; }
       dragId = null;
     }
+    if (indikatorEl) { indikatorEl.remove(); indikatorEl = null; }
     main.classList.remove('drag-active');
   }
 }
@@ -776,6 +818,14 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.6</div>
+    <div class="logg-dato">8. mai 2026</div>
+    <ul>
+      <li>Full DnD-frihet: alle widgets kan nå plasseres i hvilken som helst rekkefølge og kolonne</li>
+      <li>Visuell drop-indikator viser nøyaktig hvor widgeten plasseres</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v1.5</div>
     <div class="logg-dato">7. mai 2026</div>
