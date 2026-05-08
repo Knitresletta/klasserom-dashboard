@@ -68,7 +68,6 @@ function defaultState() {
     grupper:             null,
     lister:              {},
     timer_varighet:      300,
-    widget_hidden:       [],
     tema: 'lyst',
     font: 'system',
     skrift_størrelse: 'normal',
@@ -76,16 +75,23 @@ function defaultState() {
     notat_kursiv: false,
     gruppe_begrensninger: [],
     bilde_data: null,
-    widget_layout: [
-      { id: 'card-elever',     col: 1, span: 1 },
-      { id: 'card-grupper',    col: 1, span: 1 },
-      { id: 'card-tilfeldig',  col: 2, span: 1 },
-      { id: 'card-ordenselev', col: 2, span: 1 },
-      { id: 'card-ulv',        col: 2, span: 1 },
-      { id: 'card-timer',      col: 3, span: 1 },
-      { id: 'card-notat',      col: 3, span: 1 },
-      { id: 'card-dagsplan',   col: 3, span: 1 },
-      { id: 'card-bilde',      col: 3, span: 1 },
+    aktiv_side: 0,
+    sider: [
+      {
+        navn: 'Side 1',
+        widget_layout: [
+          { id: 'card-elever',     col: 1, span: 1 },
+          { id: 'card-grupper',    col: 1, span: 1 },
+          { id: 'card-tilfeldig',  col: 2, span: 1 },
+          { id: 'card-ordenselev', col: 2, span: 1 },
+          { id: 'card-ulv',        col: 2, span: 1 },
+          { id: 'card-timer',      col: 3, span: 1 },
+          { id: 'card-notat',      col: 3, span: 1 },
+          { id: 'card-dagsplan',   col: 3, span: 1 },
+          { id: 'card-bilde',      col: 3, span: 1 },
+        ],
+        widget_hidden: [],
+      }
     ],
   };
 }
@@ -101,11 +107,28 @@ let timerInterval  = null;
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return Object.assign(defaultState(), JSON.parse(raw));
+    if (raw) {
+      const state = Object.assign(defaultState(), JSON.parse(raw));
+      if (!state.sider) {
+        state.sider = [{
+          navn: 'Side 1',
+          widget_layout: state.widget_layout ?? defaultState().sider[0].widget_layout,
+          widget_hidden: state.widget_hidden ?? [],
+        }];
+        state.aktiv_side = 0;
+        delete state.widget_layout;
+        delete state.widget_hidden;
+      }
+      return state;
+    }
   } catch (e) {
     console.warn('loadState:', e);
   }
   return defaultState();
+}
+
+function aktivSide() {
+  return state.sider[state.aktiv_side ?? 0];
 }
 
 function saveState() {
@@ -649,15 +672,15 @@ function renderListerModal() {
 // ===================== Layout (drag + span) =====================
 function applyLayout() {
   // Forsikre at widget_layout er komplett (for gamle lagrede states)
-  const defaults = defaultState().widget_layout;
+  const defaults = defaultState().sider[0].widget_layout;
   defaults.forEach(def => {
-    if (!state.widget_layout.find(w => w.id === def.id)) {
-      state.widget_layout.push({ ...def });
+    if (!aktivSide().widget_layout.find(w => w.id === def.id)) {
+      aktivSide().widget_layout.push({ ...def });
     }
   });
 
-  const skjult = state.widget_hidden ?? [];
-  state.widget_layout.forEach(({ id, col, span }) => {
+  const skjult = aktivSide().widget_hidden ?? [];
+  aktivSide().widget_layout.forEach(({ id, col, span }) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (skjult.includes(id)) { el.style.display = 'none'; return; }
@@ -672,7 +695,7 @@ function applyLayout() {
 
 function renderWidgetMeny() {
   const dropdown = document.getElementById('widget-dropdown');
-  const skjult = state.widget_hidden ?? [];
+  const skjult = aktivSide().widget_hidden ?? [];
   dropdown.innerHTML = Object.entries(WIDGET_NAVN).map(([id, navn]) => `
     <label class="widget-meny-rad">
       <input type="checkbox" ${skjult.includes(id) ? '' : 'checked'}
@@ -682,8 +705,8 @@ function renderWidgetMeny() {
 }
 
 function toggleWidgetSynlighet(id, synlig) {
-  const skjult = state.widget_hidden ?? [];
-  state.widget_hidden = synlig
+  const skjult = aktivSide().widget_hidden ?? [];
+  aktivSide().widget_hidden = synlig
     ? skjult.filter(h => h !== id)
     : [...skjult, id];
   saveState();
@@ -691,7 +714,7 @@ function toggleWidgetSynlighet(id, synlig) {
 }
 
 function toggleSpan(cardId) {
-  const entry = state.widget_layout.find(w => w.id === cardId);
+  const entry = aktivSide().widget_layout.find(w => w.id === cardId);
   if (!entry) return;
   entry.span = (entry.span % 3) + 1;
   // Klamp kolonne så vi ikke går utenfor 3-kolonne-grid
@@ -710,9 +733,9 @@ function kolonneFraMus(clientX) {
 }
 
 function posisjonFraMus(clientY, dragId, nyKolonne) {
-  let insertAt = state.widget_layout.length;
-  for (let i = 0; i < state.widget_layout.length; i++) {
-    const { id, col } = state.widget_layout[i];
+  let insertAt = aktivSide().widget_layout.length;
+  for (let i = 0; i < aktivSide().widget_layout.length; i++) {
+    const { id, col } = aktivSide().widget_layout[i];
     if (col !== nyKolonne || id === dragId) continue;
     const el = document.getElementById(id);
     if (!el || el.style.display === 'none') continue;
@@ -761,7 +784,7 @@ function settOppDragOgDrop() {
     }
 
     const wrapper = document.querySelector(`.col-wrapper[data-col="${nyKolonne}"]`);
-    const kortsIKol = state.widget_layout
+    const kortsIKol = aktivSide().widget_layout
       .filter(w => w.col === nyKolonne && w.id !== dragId)
       .map(w => document.getElementById(w.id))
       .filter(Boolean);
@@ -782,13 +805,13 @@ function settOppDragOgDrop() {
     const nyKolonne = kolonneFraMus(e.clientX);
     let nyIndeks    = posisjonFraMus(e.clientY, dragId, nyKolonne);
 
-    const gammelIndeks = state.widget_layout.findIndex(w => w.id === dragId);
-    const entry = { ...state.widget_layout[gammelIndeks] };
+    const gammelIndeks = aktivSide().widget_layout.findIndex(w => w.id === dragId);
+    const entry = { ...aktivSide().widget_layout[gammelIndeks] };
     entry.col = nyKolonne;
 
-    state.widget_layout.splice(gammelIndeks, 1);
+    aktivSide().widget_layout.splice(gammelIndeks, 1);
     if (nyIndeks > gammelIndeks) nyIndeks--;
-    state.widget_layout.splice(nyIndeks, 0, entry);
+    aktivSide().widget_layout.splice(nyIndeks, 0, entry);
 
     saveState();
     applyLayout();
@@ -808,6 +831,61 @@ function settOppDragOgDrop() {
   }
 }
 
+// ===================== Sider =====================
+function renderSiderNav() {
+  const nav = document.getElementById('sider-nav');
+  if (!nav) return;
+  nav.innerHTML = '';
+  state.sider.forEach((side, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'side-tab' + (idx === state.aktiv_side ? ' aktiv' : '');
+    btn.textContent = side.navn;
+    btn.onclick = () => byttSide(idx);
+    if (state.sider.length > 1) {
+      const x = document.createElement('span');
+      x.className = 'side-slett';
+      x.textContent = '✕';
+      x.onclick = e => { e.stopPropagation(); fjernSide(idx); };
+      btn.appendChild(x);
+    }
+    nav.appendChild(btn);
+  });
+  const leggTil = document.createElement('button');
+  leggTil.className = 'side-legg-til';
+  leggTil.textContent = '+';
+  leggTil.title = 'Legg til side';
+  leggTil.onclick = leggTilSide;
+  nav.appendChild(leggTil);
+}
+
+function byttSide(idx) {
+  state.aktiv_side = idx;
+  saveState();
+  applyLayout();
+  renderWidgetMeny();
+  renderSiderNav();
+}
+
+function leggTilSide() {
+  const nr = state.sider.length + 1;
+  state.sider.push({
+    navn: `Side ${nr}`,
+    widget_layout: defaultState().sider[0].widget_layout.map(w => ({ ...w })),
+    widget_hidden: [],
+  });
+  byttSide(state.sider.length - 1);
+}
+
+function fjernSide(idx) {
+  if (state.sider.length <= 1) return;
+  state.sider.splice(idx, 1);
+  state.aktiv_side = Math.min(state.aktiv_side, state.sider.length - 1);
+  saveState();
+  applyLayout();
+  renderWidgetMeny();
+  renderSiderNav();
+}
+
 // ===================== Reset =====================
 function nullstillTilfeldig()   { state.tilfeldig_valgt = null; state.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
 function nullstillOrdenselev()  { state.ordenselev_valgte = []; state.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
@@ -817,6 +895,13 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.9</div>
+    <div class="logg-dato">8. mai 2026</div>
+    <ul>
+      <li>Ny funksjon: Sider — lag flere dashboard-sider med ulike widget-oppsett (midten av headeren)</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v1.8</div>
     <div class="logg-dato">8. mai 2026</div>
@@ -904,6 +989,9 @@ const OPPDATERINGSLOGG_HTML = `
   </div>`;
 
 const BRUKERVEILEDNING_HTML = `
+  <h4>Sider</h4>
+  <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side. Klikk på et sidenavn for å bytte side. Klikk <strong>✕</strong> på en fane for å slette siden. Elever, notat og andre data er delt mellom alle sider — bare widget-oppsettet er per side.</p>
+
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
   <p>Vil du spare tid neste gang? Lagre elevlisten din under <strong>📋 Lister</strong>, og last den inn igjen med ett klikk.</p>
@@ -1583,6 +1671,7 @@ function init() {
   settOppHendelser();
   settOppRename();
   settOppDragOgDrop();
+  renderSiderNav();
 }
 
 document.addEventListener('DOMContentLoaded', init);
