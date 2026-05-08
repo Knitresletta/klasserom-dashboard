@@ -636,26 +636,19 @@ function applyLayout() {
     }
   });
 
+  document.querySelectorAll('.col-wrapper').forEach(w => { w.innerHTML = ''; });
+
   const skjult = state.widget_hidden ?? [];
   state.widget_layout.forEach(({ id, col, span }) => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (skjult.includes(id)) {
-      el.style.display = 'none';
-      return;
-    }
+    if (skjult.includes(id)) { el.style.display = 'none'; return; }
     el.style.display = '';
-    el.style.gridColumn = span > 1 ? `${col} / span ${span}` : String(col);
-    // Oppdater span-dots
+    el.style.gridColumn = '';
     const dots = document.getElementById(`span-${id}`);
     if (dots) dots.textContent = ['●○○', '●●○', '●●●'][span - 1] ?? '●○○';
-  });
-
-  // Synkroniser DOM-rekkefølge til widget_layout-arrayet (styrer vertikal stabling)
-  const mainEl = document.querySelector('main');
-  state.widget_layout.forEach(({ id }) => {
-    const el = document.getElementById(id);
-    if (el) mainEl.appendChild(el);
+    const wrapper = document.querySelector(`.col-wrapper[data-col="${col}"]`);
+    if (wrapper) wrapper.appendChild(el);
   });
 }
 
@@ -690,43 +683,25 @@ function toggleSpan(cardId) {
 }
 
 function kolonneFraMus(clientX) {
-  // Finn faktiske kolonneposisjoner fra kort som er i grid
-  const colRanges = {};
-  state.widget_layout.forEach(({ id, col, span }) => {
-    const el = document.getElementById(id);
-    if (!el || el.classList.contains('dragging')) return;
-    const rect = el.getBoundingClientRect();
-    // Registrer alle kolonner dette kortet okkuperer
-    for (let c = col; c < col + span; c++) {
-      if (!colRanges[c]) colRanges[c] = { left: Infinity, right: -Infinity };
-      colRanges[c].left  = Math.min(colRanges[c].left,  rect.left);
-      colRanges[c].right = Math.max(colRanges[c].right, rect.right);
-    }
-  });
-
-  for (const col of [1, 2, 3]) {
-    const r = colRanges[col];
-    if (r && clientX >= r.left - 20 && clientX <= r.right + 20) return col;
+  const wrappers = document.querySelectorAll('.col-wrapper');
+  for (const w of wrappers) {
+    const rect = w.getBoundingClientRect();
+    if (clientX <= rect.right) return Number(w.dataset.col);
   }
-
-  // Fallback: del main-bredden i tredjeler
-  const mainRect = document.querySelector('main').getBoundingClientRect();
-  const relX = clientX - mainRect.left;
-  if (relX < mainRect.width * 0.33) return 1;
-  if (relX < mainRect.width * 0.67) return 2;
   return 3;
 }
 
-function posisjonFraMus(clientY, dragId) {
+function posisjonFraMus(clientY, dragId, nyKolonne) {
+  let insertAt = state.widget_layout.length;
   for (let i = 0; i < state.widget_layout.length; i++) {
-    const { id } = state.widget_layout[i];
-    if (id === dragId) continue;
+    const { id, col } = state.widget_layout[i];
+    if (col !== nyKolonne || id === dragId) continue;
     const el = document.getElementById(id);
     if (!el || el.style.display === 'none') continue;
     const rect = el.getBoundingClientRect();
-    if (clientY < rect.top + rect.height / 2) return i;
+    if (clientY < rect.top + rect.height / 2) { insertAt = i; break; }
   }
-  return state.widget_layout.length;
+  return insertAt;
 }
 
 function settOppDragOgDrop() {
@@ -740,7 +715,7 @@ function settOppDragOgDrop() {
   });
 
   document.addEventListener('mouseup', () => {
-    document.querySelectorAll('main > .card').forEach(c => { c.draggable = false; });
+    document.querySelectorAll('.col-wrapper > .card').forEach(c => { c.draggable = false; });
   });
 
   main.addEventListener('dragstart', e => {
@@ -760,20 +735,26 @@ function settOppDragOgDrop() {
     e.dataTransfer.dropEffect = 'move';
     if (!dragId) return;
 
-    const nyIndeks = posisjonFraMus(e.clientY, dragId);
+    const nyKolonne = kolonneFraMus(e.clientX);
 
     if (!indikatorEl) {
       indikatorEl = document.createElement('div');
       indikatorEl.className = 'drop-indikator';
     }
 
-    const cards = [...main.querySelectorAll('.card:not(.dragging)')];
-    const referanse = cards[nyIndeks] ?? null;
-    if (referanse) {
-      main.insertBefore(indikatorEl, referanse);
-    } else {
-      main.appendChild(indikatorEl);
-    }
+    const wrapper = document.querySelector(`.col-wrapper[data-col="${nyKolonne}"]`);
+    const kortsIKol = state.widget_layout
+      .filter(w => w.col === nyKolonne && w.id !== dragId)
+      .map(w => document.getElementById(w.id))
+      .filter(Boolean);
+
+    const referanse = kortsIKol.find(el => {
+      const rect = el.getBoundingClientRect();
+      return e.clientY < rect.top + rect.height / 2;
+    }) ?? null;
+
+    if (referanse) wrapper.insertBefore(indikatorEl, referanse);
+    else wrapper.appendChild(indikatorEl);
   });
 
   main.addEventListener('drop', e => {
@@ -781,11 +762,11 @@ function settOppDragOgDrop() {
     if (!dragId) return;
 
     const nyKolonne = kolonneFraMus(e.clientX);
-    let nyIndeks    = posisjonFraMus(e.clientY, dragId);
+    let nyIndeks    = posisjonFraMus(e.clientY, dragId, nyKolonne);
 
     const gammelIndeks = state.widget_layout.findIndex(w => w.id === dragId);
     const entry = { ...state.widget_layout[gammelIndeks] };
-    entry.col = Math.min(nyKolonne, 4 - entry.span);
+    entry.col = nyKolonne;
 
     state.widget_layout.splice(gammelIndeks, 1);
     if (nyIndeks > gammelIndeks) nyIndeks--;
@@ -818,6 +799,14 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v1.7</div>
+    <div class="logg-dato">8. mai 2026</div>
+    <ul>
+      <li>Kolonnene stables nå helt uavhengig av hverandre — et høyt kort i kol 2 blokkerer ikke lenger kol 1 og 3</li>
+      <li>Ny breddefordeling: 30% / 40% / 30%</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v1.6</div>
     <div class="logg-dato">8. mai 2026</div>

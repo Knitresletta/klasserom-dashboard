@@ -330,17 +330,26 @@ header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-
 
 #notat-textarea.kursiv { font-style: italic; }
 
-/* ===================== Main grid ===================== */
+/* ===================== Main layout ===================== */
 main {
-  display: grid;
-  grid-template-columns: 260px 1fr 260px;
-  grid-auto-flow: row dense;
+  display: flex;
+  flex-direction: row;
   gap: 12px;
   padding: 12px;
   flex: 1;
-  align-items: start;
+  align-items: flex-start;
 }
-/* Kort er direkte barn av grid — ingen kolonne-wrappers */
+
+.col-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 3 1 0;
+}
+
+.col-wrapper[data-col="2"] {
+  flex: 4 1 0;
+}
 
 /* ===================== Cards ===================== */
 .card {
@@ -699,7 +708,6 @@ main.drag-active::before {
   height: 3px;
   background: var(--primary);
   border-radius: 2px;
-  grid-column: 1 / -1;
   pointer-events: none;
   margin: -6px 0;
 }
