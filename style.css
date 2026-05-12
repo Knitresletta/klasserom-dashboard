@@ -488,6 +488,8 @@ main {
 .btn-ghost   { background: var(--primary-l); color: var(--primary); }
 .btn-sm      { padding: 5px 10px; font-size: .8rem; }
 .btn-icon    { padding: 6px 9px; }
+.btn-slett   { color: var(--text-muted); }
+.btn-slett:hover { color: #cc0000; }
 .w-full      { width: 100%; }
 .flex-1      { flex: 1; }
 
@@ -572,11 +574,11 @@ main {
   border-radius: var(--r-sm);
   padding: 8px 12px;
   font-weight: 700;
-  color: #92400e;
+  color: var(--amber);
   text-align: left;
 }
-.draw-result.ulv-result { background: #fef3c7; }
-.draw-result.ulv-result .drawn-name { color: #92400e; }
+.draw-result.ulv-result { background: var(--amber-l); }
+.draw-result.ulv-result .drawn-name { color: var(--amber); }
 .backlog-count {
   font-size: .75rem;
   color: var(--muted);

@@ -23,9 +23,7 @@ const WIDGET_NAVN = {
   'card-ordenselev': '⭐ Ordenselever',
   'card-ulv':        'Klassebamse',
   'card-timer':      '⏱ Timer',
-  'card-notat':      '📝 Notat',
   'card-dagsplan':   '📋 Dagsplan',
-  'card-bilde':      '🖼 Bilde',
 };
 
 const CONFIG = {
@@ -56,7 +54,6 @@ const MÅNEDER  = ['januar', 'februar', 'mars', 'april', 'mai', 'juni',
 function defaultState() {
   return {
     elever:              [],
-    notat:               '',
     dagsplan:            [],
     ordenselev_backlog:  [],
     ordenselev_valgte:   [],
@@ -72,9 +69,11 @@ function defaultState() {
     font: 'system',
     skrift_størrelse: 'normal',
     widget_størrelser: {},
-    notat_kursiv: false,
     gruppe_begrensninger: [],
-    bilde_data: null,
+    notater:      { 'notat-1': { tekst: '', kursiv: false } },
+    bilder:       { 'bilde-1': { data: null } },
+    notat_teller: 1,
+    bilde_teller: 1,
     aktiv_side: 0,
     sider: [
       {
@@ -86,9 +85,9 @@ function defaultState() {
           { id: 'card-ordenselev', col: 2, span: 1 },
           { id: 'card-ulv',        col: 2, span: 1 },
           { id: 'card-timer',      col: 3, span: 1 },
-          { id: 'card-notat',      col: 3, span: 1 },
+          { id: 'card-notat-1',    col: 3, span: 1 },
           { id: 'card-dagsplan',   col: 3, span: 1 },
-          { id: 'card-bilde',      col: 3, span: 1 },
+          { id: 'card-bilde-1',    col: 3, span: 1 },
         ],
         widget_hidden: [],
       }
@@ -118,6 +117,29 @@ function loadState() {
         state.aktiv_side = 0;
         delete state.widget_layout;
         delete state.widget_hidden;
+      }
+      // Migrer flat notat/bilde-state til flerinstans-struktur
+      if (state.notat !== undefined && !state.notater) {
+        state.notater = { 'notat-1': { tekst: state.notat || '', kursiv: state.notat_kursiv || false } };
+        delete state.notat;
+        delete state.notat_kursiv;
+      }
+      if (state.bilde_data !== undefined && !state.bilder) {
+        state.bilder = { 'bilde-1': { data: state.bilde_data || null } };
+        delete state.bilde_data;
+      }
+      if (!state.notat_teller) state.notat_teller = Math.max(...Object.keys(state.notater || {}).map(k => parseInt(k.split('-')[1]) || 0), 0);
+      if (!state.bilde_teller) state.bilde_teller = Math.max(...Object.keys(state.bilder  || {}).map(k => parseInt(k.split('-')[1]) || 0), 0);
+      // Migrer widget_layout-IDer på alle sider (card-notat → card-notat-1 osv.)
+      for (const side of state.sider) {
+        side.widget_layout = side.widget_layout.map(w =>
+          w.id === 'card-notat' ? { ...w, id: 'card-notat-1' } :
+          w.id === 'card-bilde' ? { ...w, id: 'card-bilde-1' } : w
+        );
+        side.widget_hidden = (side.widget_hidden || []).map(id =>
+          id === 'card-notat' ? 'card-notat-1' :
+          id === 'card-bilde' ? 'card-bilde-1' : id
+        );
       }
       return state;
     }
@@ -218,6 +240,7 @@ function fjernElev(idx) {
   const navn = state.elever[idx];
   if (!navn) return;
   state.elever = state.elever.filter((_, i) => i !== idx);
+  ryddBackloger(new Set([navn]));
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -225,6 +248,7 @@ function fjernElev(idx) {
 
 function fjernEleverBatch(fjernSett) {
   state.elever = state.elever.filter(e => !fjernSett.has(e));
+  ryddBackloger(fjernSett);
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -272,6 +296,15 @@ function renderElever() {
   oppdaterBegrensningSelecter();
 }
 
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // ===================== Draws =====================
 function trekkTilfeldig() {
   if (!state.elever.length) { notify('Ingen elever inne', 'error'); return; }
@@ -317,7 +350,7 @@ function trekkOrdenselev() {
     state.ordenselev_valgte = [siste, valgt2];
     state.ordenselev_backlog = [...state.ordenselev_valgte];
   } else {
-    const shufflet = [...pool].sort(() => Math.random() - .5);
+    const shufflet = shuffle(pool);
     state.ordenselev_valgte = shufflet.slice(0, 2);
     state.ordenselev_valgte.forEach(e => {
       if (!state.ordenselev_backlog.includes(e)) state.ordenselev_backlog.push(e);
@@ -518,17 +551,37 @@ function autoResizeNotat(ta) {
   ta.style.height = ta.scrollHeight + 'px';
 }
 
-function setupNotat() {
-  const ta = document.getElementById('notat-textarea');
-  ta.value = state.notat;
+function lagNotatElement(instansId) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.id = `card-${instansId}`;
+  div.innerHTML = `
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>📝 Notat</h2>
+      <div class="card-controls">
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-notat-kursiv-${instansId}" title="Kursiv tekst">𝐼</button>
+        <button class="btn-span" onclick="toggleSpan('card-${instansId}')" title="Endre bredde"><span class="span-dots" id="span-card-${instansId}">●○○</span></button>
+        <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernNotat('${instansId}')" title="Slett notat">✕</button>
+      </div>
+    </div>
+    <textarea id="notat-textarea-${instansId}" placeholder="Skriv notat her…"></textarea>
+  `;
+  return div;
+}
+
+function setupNotat(instansId) {
+  const ta = document.getElementById(`notat-textarea-${instansId}`);
+  const btnKursiv = document.getElementById(`btn-notat-kursiv-${instansId}`);
+  const data = state.notater[instansId];
+  ta.value = data.tekst;
   autoResizeNotat(ta);
-  const btnKursiv = document.getElementById('btn-notat-kursiv');
-  ta.classList.toggle('kursiv', !!state.notat_kursiv);
-  btnKursiv.classList.toggle('aktiv', !!state.notat_kursiv);
+  ta.classList.toggle('kursiv', !!data.kursiv);
+  btnKursiv.classList.toggle('aktiv', !!data.kursiv);
   btnKursiv.onclick = () => {
-    state.notat_kursiv = !state.notat_kursiv;
-    ta.classList.toggle('kursiv', state.notat_kursiv);
-    btnKursiv.classList.toggle('aktiv', state.notat_kursiv);
+    state.notater[instansId].kursiv = !state.notater[instansId].kursiv;
+    ta.classList.toggle('kursiv', state.notater[instansId].kursiv);
+    btnKursiv.classList.toggle('aktiv', state.notater[instansId].kursiv);
     saveState();
   };
   let debounce;
@@ -536,10 +589,39 @@ function setupNotat() {
     autoResizeNotat(ta);
     clearTimeout(debounce);
     debounce = setTimeout(() => {
-      state.notat = ta.value;
+      state.notater[instansId].tekst = ta.value;
       saveState();
     }, 500);
   });
+}
+
+function leggTilNotat() {
+  state.notat_teller++;
+  const id = `notat-${state.notat_teller}`;
+  state.notater[id] = { tekst: '', kursiv: false };
+  const cardId = `card-${id}`;
+  aktivSide().widget_layout.push({ id: cardId, col: 1, span: 1 });
+  const el = lagNotatElement(id);
+  document.querySelector('.col-wrapper[data-col="1"]').appendChild(el);
+  setupNotat(id);
+  settOppDragOgDrop();
+  applyLayout();
+  renderWidgetMeny();
+  saveState();
+}
+
+function fjernNotat(instansId) {
+  const cardId = `card-${instansId}`;
+  const side = aktivSide();
+  side.widget_layout = side.widget_layout.filter(w => w.id !== cardId);
+  side.widget_hidden  = (side.widget_hidden ?? []).filter(id => id !== cardId);
+  const ingenSiderBrukerDen = state.sider.every(s => !s.widget_layout.some(w => w.id === cardId));
+  if (ingenSiderBrukerDen) {
+    delete state.notater[instansId];
+    document.getElementById(cardId)?.remove();
+  }
+  renderWidgetMeny();
+  saveState();
 }
 
 // ===================== Dagsplan =====================
@@ -578,7 +660,7 @@ function lagGrupper(antall) {
   const begrensninger = state.gruppe_begrensninger ?? [];
   let grupper = null;
   for (let forsøk = 0; forsøk < 200; forsøk++) {
-    const shufflet = [...state.elever].sort(() => Math.random() - .5);
+    const shufflet = shuffle(state.elever);
     const kandidat = Array.from({ length: antall }, () => []);
     shufflet.forEach((e, i) => kandidat[i % antall].push(e));
     const ok = begrensninger.every(([a, b]) =>
@@ -691,17 +773,54 @@ function applyLayout() {
     const wrapper = document.querySelector(`.col-wrapper[data-col="${col}"]`);
     if (wrapper) wrapper.appendChild(el);
   });
+
+  const aktivIds = new Set(aktivSide().widget_layout.map(w => w.id));
+  document.querySelectorAll('[id^="card-notat-"], [id^="card-bilde-"]').forEach(el => {
+    if (!aktivIds.has(el.id)) el.style.display = 'none';
+  });
 }
 
 function renderWidgetMeny() {
   const dropdown = document.getElementById('widget-dropdown');
   const skjult = aktivSide().widget_hidden ?? [];
-  dropdown.innerHTML = Object.entries(WIDGET_NAVN).map(([id, navn]) => `
+
+  const statiske = Object.entries(WIDGET_NAVN).map(([id, navn]) => `
     <label class="widget-meny-rad">
       <input type="checkbox" ${skjult.includes(id) ? '' : 'checked'}
              onchange="toggleWidgetSynlighet('${id}', this.checked)">
       ${navn}
     </label>`).join('');
+
+  const aktivIds = aktivSide().widget_layout.map(w => w.id);
+  const notatRader = Object.keys(state.notater)
+    .filter(id => aktivIds.includes(`card-${id}`))
+    .map(instansId => {
+      const cardId = `card-${instansId}`;
+      return `<label class="widget-meny-rad">
+      <input type="checkbox" ${skjult.includes(cardId) ? '' : 'checked'}
+             onchange="toggleWidgetSynlighet('${cardId}', this.checked)">
+      📝 Notat
+    </label>`;
+    }).join('');
+
+  const bildeRader = Object.keys(state.bilder)
+    .filter(id => aktivIds.includes(`card-${id}`))
+    .map(instansId => {
+      const cardId = `card-${instansId}`;
+      return `<label class="widget-meny-rad">
+      <input type="checkbox" ${skjult.includes(cardId) ? '' : 'checked'}
+             onchange="toggleWidgetSynlighet('${cardId}', this.checked)">
+      🖼 Bilde
+    </label>`;
+    }).join('');
+
+  const leggTilKnapper = `
+    <div class="widget-meny-rad" style="gap:4px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn btn-ghost btn-sm" onclick="leggTilNotat()">+ Notat</button>
+      <button class="btn btn-ghost btn-sm" onclick="leggTilBilde()">+ Bilde</button>
+    </div>`;
+
+  dropdown.innerHTML = statiske + notatRader + bildeRader + leggTilKnapper;
 }
 
 function toggleWidgetSynlighet(id, synlig) {
@@ -890,11 +1009,45 @@ function fjernSide(idx) {
 function nullstillTilfeldig()   { state.tilfeldig_valgt = null; state.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
 function nullstillOrdenselev()  { state.ordenselev_valgte = []; state.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
 function nullstillUlv()         { state.ulv_valgt = null; state.ulv_backlog = []; saveState(); renderUlv(); notify('🐺 Ulv-trekk nullstilt'); }
-function nullstillNotat()       { state.notat = ''; saveState(); document.getElementById('notat-textarea').value = ''; notify('📝 Notat nullstilt'); }
+function nullstillNotat() {
+  for (const instansId of Object.keys(state.notater)) {
+    state.notater[instansId].tekst = '';
+    const ta = document.getElementById(`notat-textarea-${instansId}`);
+    if (ta) { ta.value = ''; autoResizeNotat(ta); }
+  }
+  saveState();
+  notify('📝 Notat nullstilt');
+}
 function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagsplan(); notify('📋 Dagsplan nullstilt'); }
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.2</div>
+    <div class="logg-dato">12. mai 2026</div>
+    <ul>
+      <li>Fikset: elever som fjernes fra listen forsvinner nå korrekt fra alle backlogs (ordenselev, klassebamse, tilfeldig)</li>
+      <li>Fikset: grupper-trekk bruker nå riktig tilfeldig fordeling — tidligere var fordelingen statistisk skjevt mot visse kombinasjoner</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.1</div>
+    <div class="logg-dato">12. mai 2026</div>
+    <ul>
+      <li>Notat- og bilde-widgets er nå per side — legg til et notat på side 1 uten at det dukker opp på side 2</li>
+      <li>Fjerner du et notat/bilde-kort på én side, forsvinner det bare der — de andre sidene er upåvirket</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.0</div>
+    <div class="logg-dato">10. mai 2026</div>
+    <ul>
+      <li>Flerinstans-notat: legg til så mange notatkort du vil via widget-menyen (+ Notat)</li>
+      <li>Flerinstans-bilde: legg til så mange bildekort du vil via widget-menyen (+ Bilde)</li>
+      <li>Hvert notat og bilde kan slettes individuelt med ✕-knappen i kortets header</li>
+      <li>Alle instanser huskes etter reload og vises på alle sider</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v1.9</div>
     <div class="logg-dato">8. mai 2026</div>
@@ -990,7 +1143,7 @@ const OPPDATERINGSLOGG_HTML = `
 
 const BRUKERVEILEDNING_HTML = `
   <h4>Sider</h4>
-  <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side. Klikk på et sidenavn for å bytte side. Klikk <strong>✕</strong> på en fane for å slette siden. Elever, notat og andre data er delt mellom alle sider — bare widget-oppsettet er per side.</p>
+  <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side. Klikk på et sidenavn for å bytte side. Klikk <strong>✕</strong> på en fane for å slette siden. Elever og andre data er delt mellom alle sider — widget-oppsettet, notater og bilder er per side.</p>
 
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
@@ -1020,12 +1173,14 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Notat</h4>
   <p>Et fritekst-felt som vokser automatisk med innholdet. Lagres automatisk i nettleseren — du mister ikke notatet ved omlasting.</p>
+  <p>Du kan ha <strong>flere notatkort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Notat</strong>. Hvert notat kan flyttes og strekkes uavhengig av de andre. Slett et notat med <strong>✕</strong>-knappen i kortets overskrift. Notater er per side — side 1 og side 2 kan ha helt forskjellige notatkort.</p>
 
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
 
   <h4>🖼 Bilde-widget</h4>
-  <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde). Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette det.</p>
+  <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
+  <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong>-knappen i kortets overskrift. Bildekort er per side — forskjellige sider kan ha forskjellige bilder.</p>
 
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Trykk på <strong>●○○</strong>-knappen for å strekke et kort over 2 eller 3 kolonner. Layouten huskes automatisk.</p>
@@ -1510,27 +1665,50 @@ function åpneRedigerBacklog(type) {
 }
 
 // ===================== Bilde-widget =====================
-function setupBilde() {
-  renderBilde();
-  document.addEventListener('paste', e => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        lesBildefil(item.getAsFile());
-        break;
-      }
-    }
-  });
+let fokusertBildeId = null;
+
+function lagBildeElement(instansId) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.id = `card-${instansId}`;
+  div.innerHTML = `
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>🖼 Bilde</h2>
+      <div class="card-controls">
+        <button class="btn-span" onclick="toggleSpan('card-${instansId}')" title="Endre bredde"><span class="span-dots" id="span-card-${instansId}">●○○</span></button>
+        <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernBildeWidget('${instansId}')" title="Slett bilde-widget">✕</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="bilde-vis-${instansId}" class="bilde-vis">
+        <label id="bilde-label-${instansId}" class="bilde-slipp">
+          <span>Klikk for å laste opp, eller lim inn (Ctrl+V)</span>
+          <input type="file" id="bilde-fil-${instansId}" accept="image/*" style="display:none" onchange="lastOppBilde(this, '${instansId}')">
+        </label>
+        <img id="bilde-img-${instansId}" style="display:none; max-width:100%; border-radius:6px" alt="">
+        <button id="bilde-fjern-${instansId}" style="display:none" onclick="fjernBildeData('${instansId}')">Fjern bilde</button>
+      </div>
+    </div>
+  `;
+  return div;
 }
 
-function renderBilde() {
-  const img    = document.getElementById('bilde-img');
-  const label  = document.getElementById('bilde-label');
-  const fjernK = document.getElementById('bilde-fjern');
+function setupBilde(instansId) {
+  document.getElementById(`card-${instansId}`)?.addEventListener('click', () => {
+    fokusertBildeId = instansId;
+  });
+  renderBilde(instansId);
+}
+
+function renderBilde(instansId) {
+  const img    = document.getElementById(`bilde-img-${instansId}`);
+  const label  = document.getElementById(`bilde-label-${instansId}`);
+  const fjernK = document.getElementById(`bilde-fjern-${instansId}`);
   if (!img) return;
-  if (state.bilde_data) {
-    img.src = state.bilde_data;
+  const data = state.bilder[instansId]?.data;
+  if (data) {
+    img.src = data;
     img.style.display = '';
     label.style.display = 'none';
     fjernK.style.display = '';
@@ -1541,29 +1719,58 @@ function renderBilde() {
   }
 }
 
-function lastOppBilde(input) {
+function lastOppBilde(input, instansId) {
   const fil = input.files?.[0];
-  if (fil) lesBildefil(fil);
+  if (fil) lesBildefil(fil, instansId);
 }
 
-function lesBildefil(fil) {
+function lesBildefil(fil, instansId) {
   if (fil.size > 2 * 1024 * 1024) {
     notify('Bildet er for stort — maks 2 MB', 'warning');
     return;
   }
   const reader = new FileReader();
   reader.onload = e => {
-    state.bilde_data = e.target.result;
+    state.bilder[instansId].data = e.target.result;
     saveState();
-    renderBilde();
+    renderBilde(instansId);
   };
   reader.readAsDataURL(fil);
 }
 
-function fjernBilde() {
-  state.bilde_data = null;
+function fjernBildeData(instansId) {
+  state.bilder[instansId].data = null;
   saveState();
-  renderBilde();
+  renderBilde(instansId);
+}
+
+function fjernBildeWidget(instansId) {
+  const cardId = `card-${instansId}`;
+  const side = aktivSide();
+  side.widget_layout = side.widget_layout.filter(w => w.id !== cardId);
+  side.widget_hidden  = (side.widget_hidden ?? []).filter(id => id !== cardId);
+  const ingenSiderBrukerDen = state.sider.every(s => !s.widget_layout.some(w => w.id === cardId));
+  if (ingenSiderBrukerDen) {
+    delete state.bilder[instansId];
+    document.getElementById(cardId)?.remove();
+  }
+  renderWidgetMeny();
+  saveState();
+}
+
+function leggTilBilde() {
+  state.bilde_teller++;
+  const id = `bilde-${state.bilde_teller}`;
+  state.bilder[id] = { data: null };
+  const cardId = `card-${id}`;
+  aktivSide().widget_layout.push({ id: cardId, col: 3, span: 1 });
+  const el = lagBildeElement(id);
+  document.querySelector('.col-wrapper[data-col="3"]').appendChild(el);
+  setupBilde(id);
+  settOppDragOgDrop();
+  applyLayout();
+  renderWidgetMeny();
+  saveState();
 }
 
 // ===================== Gruppebegrensning =====================
@@ -1660,9 +1867,33 @@ function init() {
   renderAlleTrekk();
   renderGrupper();
   renderDagsplan();
-  setupNotat();
+
+  for (const instansId of Object.keys(state.notater)) {
+    const el = lagNotatElement(instansId);
+    document.querySelector('.col-wrapper[data-col="1"]').appendChild(el);
+    setupNotat(instansId);
+  }
+
   renderTimer();
-  setupBilde();
+
+  for (const instansId of Object.keys(state.bilder)) {
+    const el = lagBildeElement(instansId);
+    document.querySelector('.col-wrapper[data-col="3"]').appendChild(el);
+    setupBilde(instansId);
+  }
+
+  document.addEventListener('paste', e => {
+    if (!fokusertBildeId) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        lesBildefil(item.getAsFile(), fokusertBildeId);
+        break;
+      }
+    }
+  });
+
   applyLayout();
   settTema(state.tema ?? 'lyst');
   settFont(state.font ?? 'system');

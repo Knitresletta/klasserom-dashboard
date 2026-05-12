@@ -114,15 +114,6 @@
               <button class="str-knapp widget-str-valg" data-widget="card-timer" data-størrelse="xl">XL</button>
             </div>
           </div>
-          <div class="widget-str-rad" data-widget="card-notat">
-            <span>Notat</span>
-            <div class="str-knapper">
-              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="liten">S</button>
-              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="normal">M</button>
-              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="stor">L</button>
-              <button class="str-knapp widget-str-valg" data-widget="card-notat" data-størrelse="xl">XL</button>
-            </div>
-          </div>
           <div class="widget-str-rad" data-widget="card-dagsplan">
             <span>Dagsplan</span>
             <div class="str-knapper">
@@ -256,18 +247,6 @@
   </div>
 
   <!-- Card: Notat -->
-  <div class="card" id="card-notat">
-    <div class="card-header">
-      <span class="drag-handle" title="Dra for å flytte">⠿</span>
-      <h2>📝 Notat</h2>
-      <div class="card-controls">
-        <button class="btn btn-ghost btn-sm btn-icon" id="btn-notat-kursiv" title="Kursiv tekst">𝐼</button>
-        <button class="btn-span" onclick="toggleSpan('card-notat')" title="Endre bredde"><span class="span-dots" id="span-card-notat">●○○</span></button>
-      </div>
-    </div>
-    <textarea id="notat-textarea" placeholder="Skriv notat her…"></textarea>
-  </div>
-
   <!-- Card: Dagsplan -->
   <div class="card" id="card-dagsplan">
     <div class="card-header">
@@ -281,26 +260,6 @@
     <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
   </div>
 
-  <!-- Card: Bilde -->
-  <div id="card-bilde" class="card">
-    <div class="card-header">
-      <span class="drag-handle" title="Dra for å flytte">⠿</span>
-      <h2>🖼 Bilde</h2>
-      <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-bilde')" title="Endre bredde"><span class="span-dots" id="span-card-bilde">●○○</span></button>
-      </div>
-    </div>
-    <div class="card-body">
-      <div id="bilde-vis" class="bilde-vis">
-        <label id="bilde-label" class="bilde-slipp">
-          <span>Klikk for å laste opp, eller lim inn (Ctrl+V)</span>
-          <input type="file" id="bilde-fil" accept="image/*" style="display:none" onchange="lastOppBilde(this)">
-        </label>
-        <img id="bilde-img" style="display:none; max-width:100%; border-radius:6px" alt="">
-        <button id="bilde-fjern" style="display:none" onclick="fjernBilde()">Fjern bilde</button>
-      </div>
-    </div>
-  </div>
 </main>
 
 <!-- Action bar -->
