@@ -240,7 +240,6 @@ function fjernElev(idx) {
   const navn = state.elever[idx];
   if (!navn) return;
   state.elever = state.elever.filter((_, i) => i !== idx);
-  ryddBackloger(new Set([navn]));
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -248,7 +247,6 @@ function fjernElev(idx) {
 
 function fjernEleverBatch(fjernSett) {
   state.elever = state.elever.filter(e => !fjernSett.has(e));
-  ryddBackloger(fjernSett);
   saveState();
   renderElever();
   renderAlleTrekk();
