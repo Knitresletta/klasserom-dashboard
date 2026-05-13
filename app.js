@@ -737,15 +737,18 @@ function renderListerModal() {
     return;
   }
   innhold.innerHTML = `<div class="modal-list">
-    ${poster.map(([navn, elever]) => `
-      <div class="modal-list-item" onclick="lastListe(${JSON.stringify(navn)});lukkModal()">
+    ${poster.map(([navn, elever]) => {
+      const jn = JSON.stringify(navn).replace(/"/g, '&quot;');
+      return `
+      <div class="modal-list-item" onclick="lastListe(${jn});lukkModal()">
         <span>📋 ${esc(navn)}</span>
         <div class="flex gap-2" style="align-items:center">
           <span class="item-meta">${elever.length} elever</span>
           <button class="btn btn-sm" style="background:var(--red-l);color:var(--red);padding:3px 8px"
-            onclick="event.stopPropagation();slettListe(${JSON.stringify(navn)})">✕</button>
+            onclick="event.stopPropagation();slettListe(${jn})">✕</button>
         </div>
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -1021,10 +1024,16 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.3</div>
+    <div class="logg-dato">13. mai 2026</div>
+    <ul>
+      <li>Fikset: lagrede lister kunne ikke hentes opp ved klikk — skyldes en feil i HTML-attributt-formatering av listenavn</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.2</div>
     <div class="logg-dato">12. mai 2026</div>
     <ul>
-      <li>Fikset: elever som fjernes fra listen forsvinner nå korrekt fra alle backlogs (ordenselev, klassebamse, tilfeldig)</li>
       <li>Fikset: grupper-trekk bruker nå riktig tilfeldig fordeling — tidligere var fordelingen statistisk skjevt mot visse kombinasjoner</li>
     </ul>
   </div>
