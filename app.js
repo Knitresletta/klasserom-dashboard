@@ -1024,6 +1024,13 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.4</div>
+    <div class="logg-dato">14. mai 2026</div>
+    <ul>
+      <li>Temaene «På fjellet», «I eventyrland» og «Equestria» har fått mer karakter — saturert bakgrunn, tonet kort og egen header-gradient så de skiller seg tydelig fra lys modus</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.3</div>
     <div class="logg-dato">13. mai 2026</div>
     <ul>
