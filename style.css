@@ -653,8 +653,15 @@ main {
   background: var(--bg);
   border-radius: 6px;
   font-size: .85rem;
+  cursor: pointer;
 }
-.dagsplan-item span { flex: 1; }
+.dagsplan-item .dagsplan-tekst { flex: 1; }
+.dagsplan-prikk { transition: color .1s; }
+.dagsplan-item.ferdig .dagsplan-prikk { color: var(--green); }
+.dagsplan-item.ferdig .dagsplan-tekst {
+  text-decoration: line-through;
+  color: var(--muted);
+}
 .dagsplan-slett {
   background: none;
   border: none;

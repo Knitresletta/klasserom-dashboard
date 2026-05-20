@@ -141,6 +141,10 @@ function loadState() {
           id === 'card-bilde' ? 'card-bilde-1' : id
         );
       }
+      // Migrer dagsplan-strenger til { tekst, ferdig }-objekter
+      state.dagsplan = (state.dagsplan || []).map(p =>
+        typeof p === 'string' ? { tekst: p, ferdig: false } : p
+      );
       return state;
     }
   } catch (e) {
@@ -624,13 +628,21 @@ function fjernNotat(instansId) {
 
 // ===================== Dagsplan =====================
 function leggTilDagsplan(tekst) {
-  state.dagsplan.push(tekst);
+  state.dagsplan.push({ tekst, ferdig: false });
   saveState();
   renderDagsplan();
 }
 
 function fjernDagsplan(idx) {
   state.dagsplan.splice(idx, 1);
+  saveState();
+  renderDagsplan();
+}
+
+function toggleDagsplanFerdig(idx) {
+  const p = state.dagsplan[idx];
+  if (!p) return;
+  p.ferdig = !p.ferdig;
   saveState();
   renderDagsplan();
 }
@@ -642,9 +654,10 @@ function renderDagsplan() {
     return;
   }
   liste.innerHTML = state.dagsplan.map((p, i) => `
-    <div class="dagsplan-item">
-      <span>● ${esc(p)}</span>
-      <button class="dagsplan-slett" onclick="fjernDagsplan(${i})" title="Fjern">✕</button>
+    <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}" onclick="toggleDagsplanFerdig(${i})">
+      <span class="dagsplan-prikk">●</span>
+      <span class="dagsplan-tekst">${esc(p.tekst)}</span>
+      <button class="dagsplan-slett" onclick="event.stopPropagation();fjernDagsplan(${i})" title="Fjern">✕</button>
     </div>`).join('');
 }
 
@@ -1024,6 +1037,13 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.5</div>
+    <div class="logg-dato">20. mai 2026</div>
+    <ul>
+      <li>Klikk på et dagsplan-punkt for å markere det som ferdig — prikken blir grønn og teksten får gjennomstreking. Klikk igjen for å angre</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.4</div>
     <div class="logg-dato">14. mai 2026</div>
     <ul>
@@ -1191,6 +1211,7 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
+  <p><strong>Klikk på et punkt</strong> for å markere det som ferdig — prikken blir grønn og teksten får en strek over. Klikk på punktet igjen for å angre.</p>
 
   <h4>🖼 Bilde-widget</h4>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
