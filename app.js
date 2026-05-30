@@ -26,11 +26,6 @@ const WIDGET_NAVN = {
   'card-dagsplan':   '📋 Dagsplan',
 };
 
-const CONFIG = {
-  github_feedback_token: 'ghp_XXXXXXXXXXXXXXXXXXXXXX',
-  github_feedback_repo:  'knitresletta/klasserom-web',
-};
-
 const VÆR_LAT = 60.33;
 const VÆR_LON = 11.22;
 
@@ -78,21 +73,30 @@ function defaultState() {
     sider: [
       {
         navn: 'Side 1',
+        kolonner: 3,
+        kol_bredder: [3, 4, 3],
         widget_layout: [
-          { id: 'card-elever',     col: 1, span: 1 },
-          { id: 'card-grupper',    col: 1, span: 1 },
-          { id: 'card-tilfeldig',  col: 2, span: 1 },
-          { id: 'card-ordenselev', col: 2, span: 1 },
-          { id: 'card-ulv',        col: 2, span: 1 },
-          { id: 'card-timer',      col: 3, span: 1 },
-          { id: 'card-notat-1',    col: 3, span: 1 },
-          { id: 'card-dagsplan',   col: 3, span: 1 },
-          { id: 'card-bilde-1',    col: 3, span: 1 },
+          { id: 'card-elever',     col: 1 },
+          { id: 'card-grupper',    col: 1 },
+          { id: 'card-tilfeldig',  col: 2 },
+          { id: 'card-ordenselev', col: 2 },
+          { id: 'card-ulv',        col: 2 },
+          { id: 'card-timer',      col: 3 },
+          { id: 'card-notat-1',    col: 3 },
+          { id: 'card-dagsplan',   col: 3 },
+          { id: 'card-bilde-1',    col: 3 },
         ],
         widget_hidden: [],
       }
     ],
   };
+}
+
+// Standard kolonnebredder (flex-vekter) for n kolonner.
+// 3 kolonner beholder den klassiske 30/40/30-fordelingen; ellers like brede.
+function standardBredder(n) {
+  if (n === 3) return [3, 4, 3];
+  return Array.from({ length: n }, () => 1);
 }
 
 let state = loadState();
@@ -140,6 +144,11 @@ function loadState() {
           id === 'card-notat' ? 'card-notat-1' :
           id === 'card-bilde' ? 'card-bilde-1' : id
         );
+        // Migrer kolonne-innstillinger (lagt til i v2.6)
+        if (!side.kolonner) side.kolonner = 3;
+        if (!Array.isArray(side.kol_bredder) || side.kol_bredder.length !== side.kolonner) {
+          side.kol_bredder = standardBredder(side.kolonner);
+        }
       }
       // Migrer dagsplan-strenger til { tekst, ferdig }-objekter
       state.dagsplan = (state.dagsplan || []).map(p =>
@@ -563,7 +572,6 @@ function lagNotatElement(instansId) {
       <h2>📝 Notat</h2>
       <div class="card-controls">
         <button class="btn btn-ghost btn-sm btn-icon" id="btn-notat-kursiv-${instansId}" title="Kursiv tekst">𝐼</button>
-        <button class="btn-span" onclick="toggleSpan('card-${instansId}')" title="Endre bredde"><span class="span-dots" id="span-card-${instansId}">●○○</span></button>
         <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernNotat('${instansId}')" title="Slett notat">✕</button>
       </div>
     </div>
@@ -602,7 +610,7 @@ function leggTilNotat() {
   const id = `notat-${state.notat_teller}`;
   state.notater[id] = { tekst: '', kursiv: false };
   const cardId = `card-${id}`;
-  aktivSide().widget_layout.push({ id: cardId, col: 1, span: 1 });
+  aktivSide().widget_layout.push({ id: cardId, col: 1 });
   const el = lagNotatElement(id);
   document.querySelector('.col-wrapper[data-col="1"]').appendChild(el);
   setupNotat(id);
@@ -765,7 +773,7 @@ function renderListerModal() {
   </div>`;
 }
 
-// ===================== Layout (drag + span) =====================
+// ===================== Layout (drag) =====================
 function applyLayout() {
   // Forsikre at widget_layout er komplett (for gamle lagrede states)
   const defaults = defaultState().sider[0].widget_layout;
@@ -775,16 +783,17 @@ function applyLayout() {
     }
   });
 
+  const antallKol = aktivSide().kolonner ?? 3;
   const skjult = aktivSide().widget_hidden ?? [];
-  aktivSide().widget_layout.forEach(({ id, col, span }) => {
+  aktivSide().widget_layout.forEach(({ id, col }) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (skjult.includes(id)) { el.style.display = 'none'; return; }
     el.style.display = '';
     el.style.gridColumn = '';
-    const dots = document.getElementById(`span-${id}`);
-    if (dots) dots.textContent = ['●○○', '●●○', '●●●'][span - 1] ?? '●○○';
-    const wrapper = document.querySelector(`.col-wrapper[data-col="${col}"]`);
+    // Klamp til antall kolonner på denne siden (kort i fjernede kolonner havner i siste)
+    const målKol = Math.min(col, antallKol);
+    const wrapper = document.querySelector(`.col-wrapper[data-col="${målKol}"]`);
     if (wrapper) wrapper.appendChild(el);
   });
 
@@ -846,14 +855,126 @@ function toggleWidgetSynlighet(id, synlig) {
   applyLayout();
 }
 
-function toggleSpan(cardId) {
-  const entry = aktivSide().widget_layout.find(w => w.id === cardId);
-  if (!entry) return;
-  entry.span = (entry.span % 3) + 1;
-  // Klamp kolonne så vi ikke går utenfor 3-kolonne-grid
-  entry.col = Math.min(entry.col, 4 - entry.span);
+// ===================== Kolonner (antall + bredde, per side) =====================
+const MIN_KOL = 1;
+const MAKS_KOL = 4;
+const MIN_KOL_PX = 100; // minste bredde en kolonne kan dras ned til
+
+// Bygger riktig antall .col-wrapper for aktiv side, setter breddene (flex-vekter)
+// og legger dra-håndtak (.kl-col-resizer) mellom kolonnene. Beholder kort-elementer.
+function byggKolonner() {
+  const main = document.querySelector('main');
+  const side = aktivSide();
+  const n = side.kolonner ?? 3;
+  const bredder = side.kol_bredder ?? standardBredder(n);
+
+  // Fjern gamle resizers (settes inn på nytt under)
+  main.querySelectorAll('.kl-col-resizer').forEach(r => r.remove());
+
+  let wrappers = [...main.querySelectorAll('.col-wrapper')];
+
+  // For mange kolonner: flytt kortene til siste gjenværende, fjern wrapperen
+  while (wrappers.length > n) {
+    const w = wrappers.pop();
+    const siste = wrappers[wrappers.length - 1];
+    [...w.children].forEach(c => { if (c.classList.contains('card')) siste.appendChild(c); });
+    w.remove();
+  }
+  // For få kolonner: legg til tomme wrappers
+  while (wrappers.length < n) {
+    const w = document.createElement('div');
+    w.className = 'col-wrapper';
+    main.appendChild(w);
+    wrappers.push(w);
+  }
+
+  // Sett kolonnenummer + bredde, og sett inn resizer etter hver kolonne unntatt siste
+  wrappers.forEach((w, i) => {
+    w.dataset.col = i + 1;
+    w.style.flex = `${bredder[i] ?? 1} 1 0`;
+    if (i < wrappers.length - 1) {
+      const r = document.createElement('div');
+      r.className = 'kl-col-resizer';
+      r.dataset.venstre = i + 1; // resizer mellom kolonne (i+1) og (i+2)
+      r.title = 'Dra for å justere kolonnebredde';
+      w.after(r);
+    }
+  });
+
+  settOppResizers();
+}
+
+function settOppResizers() {
+  document.querySelectorAll('.kl-col-resizer').forEach(r => {
+    r.onmousedown = e => startResize(e, r);
+  });
+}
+
+function startResize(e, resizer) {
+  e.preventDefault();
+  const venstreCol = Number(resizer.dataset.venstre);
+  const wVenstre = document.querySelector(`.col-wrapper[data-col="${venstreCol}"]`);
+  const wHøyre   = document.querySelector(`.col-wrapper[data-col="${venstreCol + 1}"]`);
+  if (!wVenstre || !wHøyre) return;
+
+  const bredder = aktivSide().kol_bredder;
+  const startX  = e.clientX;
+  const pxV0    = wVenstre.getBoundingClientRect().width;
+  const pxH0    = wHøyre.getBoundingClientRect().width;
+  const pxSum   = pxV0 + pxH0;
+  const vektSum = bredder[venstreCol - 1] + bredder[venstreCol];
+  document.body.classList.add('kl-resizing');
+
+  function onMove(ev) {
+    let nyPxV = pxV0 + (ev.clientX - startX);
+    nyPxV = Math.max(MIN_KOL_PX, Math.min(pxSum - MIN_KOL_PX, nyPxV));
+    const andel = nyPxV / pxSum;
+    const nyVektV = vektSum * andel;
+    const nyVektH = vektSum - nyVektV;
+    bredder[venstreCol - 1] = nyVektV;
+    bredder[venstreCol]     = nyVektH;
+    wVenstre.style.flex = `${nyVektV} 1 0`;
+    wHøyre.style.flex   = `${nyVektH} 1 0`;
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.body.classList.remove('kl-resizing');
+    saveState();
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function endreKolonneAntall(delta) {
+  const side = aktivSide();
+  const n  = side.kolonner ?? 3;
+  const ny = Math.max(MIN_KOL, Math.min(MAKS_KOL, n + delta));
+  if (ny === n) return;
+
+  if (ny > n) {
+    // Legg til kolonne(r) med standard enkeltbredde (3 ≈ samme vekt som sidekolonnene)
+    for (let i = n; i < ny; i++) side.kol_bredder.push(3);
+  } else {
+    // Fjern kolonne(r): klamp kort som lå i fjernet kolonne til den siste
+    side.kol_bredder = side.kol_bredder.slice(0, ny);
+    side.widget_layout.forEach(w => { if (w.col > ny) w.col = ny; });
+  }
+  side.kolonner = ny;
   saveState();
+  byggKolonner();
   applyLayout();
+  oppdaterKolonneStepper();
+}
+
+function oppdaterKolonneStepper() {
+  const n = aktivSide().kolonner ?? 3;
+  const tall = document.getElementById('kol-antall');
+  if (tall) tall.textContent = n;
+  const minus = document.getElementById('btn-kol-minus');
+  const pluss = document.getElementById('btn-kol-pluss');
+  if (minus) minus.disabled = n <= MIN_KOL;
+  if (pluss) pluss.disabled = n >= MAKS_KOL;
 }
 
 function kolonneFraMus(clientX) {
@@ -862,7 +983,7 @@ function kolonneFraMus(clientX) {
     const rect = w.getBoundingClientRect();
     if (clientX <= rect.right) return Number(w.dataset.col);
   }
-  return 3;
+  return aktivSide().kolonner ?? 3;
 }
 
 function posisjonFraMus(clientY, dragId, nyKolonne) {
@@ -994,15 +1115,19 @@ function renderSiderNav() {
 function byttSide(idx) {
   state.aktiv_side = idx;
   saveState();
+  byggKolonner();
   applyLayout();
   renderWidgetMeny();
   renderSiderNav();
+  oppdaterKolonneStepper();
 }
 
 function leggTilSide() {
   const nr = state.sider.length + 1;
   state.sider.push({
     navn: `Side ${nr}`,
+    kolonner: 3,
+    kol_bredder: standardBredder(3),
     widget_layout: defaultState().sider[0].widget_layout.map(w => ({ ...w })),
     widget_hidden: [],
   });
@@ -1014,9 +1139,11 @@ function fjernSide(idx) {
   state.sider.splice(idx, 1);
   state.aktiv_side = Math.min(state.aktiv_side, state.sider.length - 1);
   saveState();
+  byggKolonner();
   applyLayout();
   renderWidgetMeny();
   renderSiderNav();
+  oppdaterKolonneStepper();
 }
 
 // ===================== Reset =====================
@@ -1036,6 +1163,17 @@ function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagspl
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.6</div>
+    <div class="logg-dato">29. mai 2026</div>
+    <ul>
+      <li>Juster kolonnebredden fritt: dra i de tynne skillelinjene mellom kolonnene. Bredden lagres per side</li>
+      <li>Endre antall kolonner (1–4) med <strong>⊞ Kolonner − / +</strong> nederst i verktøylinja. Når du fjerner en kolonne flyttes kortene til den siste. Lagres per side</li>
+      <li>Fjernet den gamle <strong>●○○</strong>-breddeknappen på hvert kort — den hadde ingen effekt lenger, og kolonnebredden styres nå med dra-linjene mellom kolonnene</li>
+      <li>Fikset: skriftstørrelse-valgene gjorde ingenting før. Nå skalerer <strong>Alle widgets</strong> hele grensesnittet, og <strong>Enkelt widget</strong>-knappene forstørrer faktisk kortet</li>
+      <li>💬 Tilbakemelding henviser nå til e-post og GitHub i stedet for et innebygd skjema</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v2.5</div>
     <div class="logg-dato">20. mai 2026</div>
@@ -1218,8 +1356,12 @@ const BRUKERVEILEDNING_HTML = `
   <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong>-knappen i kortets overskrift. Bildekort er per side — forskjellige sider kan ha forskjellige bilder.</p>
 
   <h4>Tilpasse layouten</h4>
-  <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Trykk på <strong>●○○</strong>-knappen for å strekke et kort over 2 eller 3 kolonner. Layouten huskes automatisk.</p>
+  <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Layouten huskes automatisk.</p>
   <p>Vil du skjule et kort du ikke bruker? Trykk <strong>⊞ Widgets</strong> øverst til høyre og fjern avhukingen.</p>
+
+  <h4>Kolonnebredde og antall kolonner</h4>
+  <p><strong>Juster bredden:</strong> hold musen mellom to kolonner — det dukker opp en tynn skillelinje. Dra i den for å gjøre den ene kolonnen bredere og den andre smalere. Breddene huskes per side.</p>
+  <p><strong>Endre antall:</strong> bruk <strong>⊞ Kolonner</strong> med <strong>−</strong> og <strong>+</strong> nederst til venstre for å gå mellom 1 og 4 kolonner. Når du fjerner en kolonne, flyttes kortene som lå der over til den siste kolonnen — ingenting forsvinner. Antall kolonner lagres per side, så side 1 kan ha tre kolonner mens side 2 har én.</p>
 
   <h4>Tema</h4>
   <p>Åpne <strong>Klasserom-menyen</strong> (tannhjulet øverst til venstre) og hold musen over <strong>🎨 Tema</strong>. Velg blant tre standardtemaer (Lyst, Mørkt, Høy kontrast) eller åtte kreative temaer: Under vann, På fjellet, I skogen, I en vulkan, I eventyrland, Matrix, Cyberspace og Equestria. Temaet lagres automatisk.</p>
@@ -1228,7 +1370,7 @@ const BRUKERVEILEDNING_HTML = `
   <p>Hold musen over <strong>🔤 Font</strong> i Klasserom-menyen. Velg blant systemstandard og seks Google Fonts — inkludert <em>Victor Mono</em> (monospace), <em>Caveat</em> (håndskrevet) og <em>Playfair Display</em> (serif). Fonten lastes dynamisk og lagres til neste gang.</p>
 
   <h4>Skriftstørrelse</h4>
-  <p>Hold musen over <strong>📏 Skriftstørrelse</strong> i Klasserom-menyen. Under <strong>Alle widgets</strong> setter du global størrelse (Liten 12px → Ekstra stor 19px). Under <strong>Enkelt widget</strong> kan du justere hvert kort individuelt med S/M/L/XL-knapper uten å lukke menyen.</p>
+  <p>Hold musen over <strong>📏 Skriftstørrelse</strong> i Klasserom-menyen. Under <strong>Alle widgets</strong> skalerer du hele grensesnittet (Liten → Ekstra stor), der Normal er standardstørrelsen. Under <strong>Enkelt widget</strong> kan du forstørre eller forminske ett kort om gangen med S/M/L/XL-knapper uten å lukke menyen — størrelsen legger seg oppå den globale.</p>
 
   <h4>Kursiv tekst i Notat</h4>
   <p>Trykk <strong><em>𝐼</em></strong>-knappen øverst i Notat-kortet for å slå kursiv tekst av og på. Innstillingen lagres automatisk.</p>
@@ -1253,8 +1395,8 @@ const BRUKERVEILEDNING_HTML = `
     <li><kbd>Esc</kbd> — Lukk åpne vinduer</li>
   </ul>
 
-  <h4>💬 Send tilbakemelding</h4>
-  <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Velg type (feil, ønsket funksjon eller annet), skriv en kort beskrivelse og klikk <strong>Send</strong>. Tilbakemeldingen sendes direkte til utvikleren.</p>
+  <h4>💬 Tilbakemelding & kontakt</h4>
+  <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Der finner du to måter å nå utvikleren på: send en e-post til <strong>knitresletta@pm.me</strong>, eller opprett en sak (issue) på GitHub for å melde en feil eller foreslå en ny funksjon.</p>
 
   <h4>Lagring</h4>
   <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>`;
@@ -1363,11 +1505,13 @@ function settFont(fontKey) {
   });
 }
 
+// Rot-skriftstørrelser (px). «normal» = 16px = nettleserens standardrot, så
+// grensesnittet ser likt ut som før ved normal og skalerer proporsjonalt ellers.
 const STØRRELSER = {
-  'liten':  '12px',
-  'normal': '14px',
-  'stor':   '16px',
-  'xl':     '19px',
+  'liten':  '14px',
+  'normal': '16px',
+  'stor':   '18px',
+  'xl':     '20px',
 };
 
 function settSkriftstørrelse(key) {
@@ -1383,8 +1527,10 @@ function settSkriftstørrelse(key) {
 function settWidgetSkriftstørrelse(widgetId, key) {
   const card = document.getElementById(widgetId);
   if (!card) return;
-  const px = STØRRELSER[key] ?? null;
-  card.style.fontSize = px ?? '';
+  // Bruker zoom (ikke font-size), ellers ignorerer kortets rem-baserte tekst endringen.
+  // Faktor er relativ til normal (16px), så per-widget legger seg oppå den globale størrelsen.
+  const faktor = STØRRELSER[key] ? parseInt(STØRRELSER[key], 10) / 16 : 1;
+  card.style.zoom = (key && key !== 'normal') ? faktor : '';
   if (!state.widget_størrelser) state.widget_størrelser = {};
   if (key === 'normal') {
     delete state.widget_størrelser[widgetId];
@@ -1535,6 +1681,10 @@ function settOppHendelser() {
     document.getElementById('blackboard-overlay').classList.remove('hidden');
   document.getElementById('blackboard-overlay').onclick = () =>
     document.getElementById('blackboard-overlay').classList.add('hidden');
+
+  // Kolonne-stepper (antall kolonner på denne siden)
+  document.getElementById('btn-kol-minus').onclick = () => endreKolonneAntall(-1);
+  document.getElementById('btn-kol-pluss').onclick = () => endreKolonneAntall(1);
 
   // Widget-synlighetsmeny
   const btnWidgetMeny   = document.getElementById('btn-widget-meny');
@@ -1711,7 +1861,6 @@ function lagBildeElement(instansId) {
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>🖼 Bilde</h2>
       <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-${instansId}')" title="Endre bredde"><span class="span-dots" id="span-card-${instansId}">●○○</span></button>
         <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernBildeWidget('${instansId}')" title="Slett bilde-widget">✕</button>
       </div>
     </div>
@@ -1798,9 +1947,10 @@ function leggTilBilde() {
   const id = `bilde-${state.bilde_teller}`;
   state.bilder[id] = { data: null };
   const cardId = `card-${id}`;
-  aktivSide().widget_layout.push({ id: cardId, col: 3, span: 1 });
+  const col = Math.min(3, aktivSide().kolonner ?? 3);
+  aktivSide().widget_layout.push({ id: cardId, col });
   const el = lagBildeElement(id);
-  document.querySelector('.col-wrapper[data-col="3"]').appendChild(el);
+  document.querySelector(`.col-wrapper[data-col="${col}"]`).appendChild(el);
   setupBilde(id);
   settOppDragOgDrop();
   applyLayout();
@@ -1856,40 +2006,11 @@ function oppdaterBegrensningSelecter() {
   });
 }
 
-// ===================== Tilbakemeldingsverktøy =====================
+// ===================== Tilbakemelding & kontakt =====================
+// Modalen viser kontaktvalg (e-post + GitHub issues) — ingen innebygd
+// skjemainnsending. Lenkene ligger direkte i index.html.
 function åpneTilbakemeldingModal() {
   document.getElementById('feedback-modal').style.display = 'flex';
-}
-
-async function sendTilbakemelding() {
-  const type  = document.getElementById('feedback-type').value;
-  const tekst = document.getElementById('feedback-tekst').value.trim();
-  if (!tekst) { notify('Skriv inn en beskrivelse først', 'warning'); return; }
-
-  const titler  = { bug: '🐛 Feil', ønske: '✨ Ønske', annet: '💬 Annet' };
-  const etiketter = { bug: ['bug'], ønske: ['enhancement'], annet: [] };
-
-  try {
-    const svar = await fetch(`https://api.github.com/repos/${CONFIG.github_feedback_repo}/issues`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${CONFIG.github_feedback_token}`,
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        title:  `${titler[type]}: ${tekst.slice(0, 60)}`,
-        body:   `**Type:** ${titler[type]}\n\n${tekst}\n\n---\n*Sendt fra klasserom-web*`,
-        labels: etiketter[type],
-      }),
-    });
-    if (!svar.ok) throw new Error(svar.status);
-    notify('Tilbakemelding sendt! Takk 🙏');
-    document.getElementById('feedback-tekst').value = '';
-    document.getElementById('feedback-modal').style.display = 'none';
-  } catch (err) {
-    notify('Kunne ikke sende — sjekk nettforbindelsen', 'error');
-  }
 }
 
 function init() {
@@ -1929,6 +2050,7 @@ function init() {
     }
   });
 
+  byggKolonner();
   applyLayout();
   settTema(state.tema ?? 'lyst');
   settFont(state.font ?? 'system');
@@ -1938,6 +2060,7 @@ function init() {
   settOppRename();
   settOppDragOgDrop();
   renderSiderNav();
+  oppdaterKolonneStepper();
 }
 
 document.addEventListener('DOMContentLoaded', init);

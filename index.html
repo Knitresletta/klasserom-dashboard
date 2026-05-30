@@ -148,9 +148,6 @@
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>Elever</h2>
-      <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-elever')" title="Endre bredde"><span class="span-dots" id="span-card-elever">●○○</span></button>
-      </div>
     </div>
     <div id="elev-liste"></div>
     <div class="elev-count">
@@ -171,7 +168,6 @@
       <div class="card-controls">
         <button class="btn btn-ghost btn-sm" id="btn-grupper-ny" title="Lag nye grupper (g)">🎲 Del inn</button>
         <button class="btn btn-sm" id="btn-grupper-fjern" title="Fjern grupper">✕</button>
-        <button class="btn-span" onclick="toggleSpan('card-grupper')" title="Endre bredde"><span class="span-dots" id="span-card-grupper">●○○</span></button>
       </div>
     </div>
     <div id="grupper-vis">
@@ -184,9 +180,6 @@
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>🎲 Tilfeldig elev</h2>
-      <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-tilfeldig')" title="Endre bredde"><span class="span-dots" id="span-card-tilfeldig">●○○</span></button>
-      </div>
     </div>
     <div id="tilfeldig-vis" class="draw-placeholder">Trykk Trekk for å velge en tilfeldig elev</div>
     <div id="tilfeldig-backlog-count" class="backlog-count hidden"></div>
@@ -203,7 +196,6 @@
       <h2>⭐ Ordenselever</h2>
       <div class="card-controls">
         <button class="btn btn-ghost btn-sm btn-icon" id="btn-rediger-ordenselev" title="Rediger backlog">📝</button>
-        <button class="btn-span" onclick="toggleSpan('card-ordenselev')" title="Endre bredde"><span class="span-dots" id="span-card-ordenselev">●○○</span></button>
       </div>
     </div>
     <div id="ordenselev-vis" class="draw-placeholder">Trykk Trekk for å velge to ordenselever</div>
@@ -219,7 +211,6 @@
       <div class="card-controls">
         <button class="btn btn-ghost btn-sm btn-icon" id="btn-ulv-rename" title="Endre navn">✏️</button>
         <button class="btn btn-ghost btn-sm btn-icon" id="btn-rediger-ulv" title="Rediger backlog">📝</button>
-        <button class="btn-span" onclick="toggleSpan('card-ulv')" title="Endre bredde"><span class="span-dots" id="span-card-ulv">●○○</span></button>
       </div>
     </div>
     <div id="ulv-vis" class="draw-placeholder">Trykk Trekk for å velge hvem som tar med klassebamse hjem</div>
@@ -232,9 +223,6 @@
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>⏱ Timer</h2>
-      <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-timer')" title="Endre bredde"><span class="span-dots" id="span-card-timer">●○○</span></button>
-      </div>
     </div>
     <div id="timer-display">05:00</div>
     <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
@@ -252,9 +240,6 @@
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>📋 Dagsplan</h2>
-      <div class="card-controls">
-        <button class="btn-span" onclick="toggleSpan('card-dagsplan')" title="Endre bredde"><span class="span-dots" id="span-card-dagsplan">●○○</span></button>
-      </div>
     </div>
     <div id="dagsplan-liste"></div>
     <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
@@ -266,6 +251,12 @@
 <div id="action-bar">
   <button class="btn btn-ghost btn-sm" id="btn-nullstill" title="Nullstill (n)">⚙️ Nullstill…</button>
   <button class="btn btn-ghost btn-sm" id="btn-blackboard" title="Tavlemodus (b)">🖥 Tavle</button>
+  <div class="kl-kol-stepper" title="Antall kolonner på denne siden">
+    <span>⊞ Kolonner</span>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btn-kol-minus" title="Færre kolonner">−</button>
+    <span id="kol-antall">3</span>
+    <button class="btn btn-ghost btn-sm btn-icon" id="btn-kol-pluss" title="Flere kolonner">+</button>
+  </div>
   <div class="action-bar-right">
     <span class="shortcut-hint">
       <kbd>a</kbd> elev &nbsp;
@@ -419,18 +410,20 @@
 <!-- Feedback-modal -->
 <div id="feedback-modal" class="modal-overlay" style="display:none">
   <div class="modal-boks">
-    <h3>💬 Send tilbakemelding</h3>
-    <label>Type:
-      <select id="feedback-type">
-        <option value="bug">🐛 Feil</option>
-        <option value="ønske">✨ Ønsket funksjon</option>
-        <option value="annet">💬 Annet</option>
-      </select>
-    </label>
-    <textarea id="feedback-tekst" rows="4" placeholder="Beskriv feilen eller ønsket..."></textarea>
+    <h3>💬 Tilbakemelding & kontakt</h3>
+    <p class="kontakt-intro">Funnet en feil, eller har du et ønske til appen? Jeg vil gjerne høre fra deg — velg det som passer deg best.</p>
+    <div class="kontakt-valg">
+      <a class="kontakt-lenke" href="mailto:knitresletta@pm.me?subject=Klasserom-dashboard%20%E2%80%93%20tilbakemelding">
+        ✉️ Send en e-post
+        <span>knitresletta@pm.me</span>
+      </a>
+      <a class="kontakt-lenke" href="https://github.com/Knitresletta/klasserom-dashboard/issues/new" target="_blank" rel="noopener noreferrer">
+        🐙 Opprett en sak på GitHub
+        <span>Meld feil eller foreslå en ny funksjon</span>
+      </a>
+    </div>
     <div class="modal-knapper">
-      <button onclick="sendTilbakemelding()">Send</button>
-      <button onclick="document.getElementById('feedback-modal').style.display='none'">Avbryt</button>
+      <button onclick="document.getElementById('feedback-modal').style.display='none'">Lukk</button>
     </div>
   </div>
 </div>

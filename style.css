@@ -20,6 +20,8 @@
   --r:            12px;
   --r-sm:         8px;
   --font:         system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Skriftstørrelse settes på roten slik at alle rem-baserte størrelser skalerer */
+  font-size: var(--font-size, 16px);
 }
 
 /* ===================== Temaer ===================== */
@@ -220,7 +222,7 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  font-size: var(--font-size, 14px);
+  font-size: 0.875rem; /* 14px ved normal rot (16px) — skalerer med --font-size */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -389,12 +391,37 @@ main {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 3 1 0;
+  flex: 1 1 0; /* faktisk bredde settes inline pr. side fra kol_bredder */
+  min-width: 0;
 }
 
-.col-wrapper[data-col="2"] {
-  flex: 4 1 0;
+/* Dra-håndtak mellom kolonner for å justere bredde (settes inn av byggKolonner) */
+.kl-col-resizer {
+  flex: 0 0 8px;
+  align-self: stretch;
+  position: relative;
+  cursor: col-resize;
+  border-radius: 4px;
+  transition: background .12s;
 }
+.kl-col-resizer::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity .12s, background .12s;
+}
+main:hover .kl-col-resizer::before { opacity: .35; }
+.kl-col-resizer:hover { background: var(--primary-l); }
+.kl-col-resizer:hover::before { opacity: 1; background: var(--primary); }
+body.kl-resizing { cursor: col-resize; user-select: none; }
+body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary); }
 
 /* ===================== Cards ===================== */
 .card {
@@ -447,24 +474,6 @@ main {
 .card:hover .drag-handle { opacity: 1; }
 .drag-handle:hover { color: var(--muted); }
 .drag-handle:active { cursor: grabbing; }
-
-/* ===================== Span toggle ===================== */
-.btn-span {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 5px;
-  border-radius: 4px;
-  transition: background .1s;
-  flex-shrink: 0;
-}
-.btn-span:hover { background: var(--primary-l); }
-.span-dots {
-  font-size: .7rem;
-  letter-spacing: 1px;
-  color: var(--muted);
-}
-.btn-span:hover .span-dots { color: var(--primary); }
 
 /* ===================== Buttons ===================== */
 .btn {
@@ -800,6 +809,23 @@ main.drag-active::before {
   color: var(--muted);
   opacity: .7;
 }
+.kl-kol-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .74rem;
+  color: var(--muted);
+}
+.kl-kol-stepper #kol-antall {
+  min-width: 1.2ch;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text);
+}
+.kl-kol-stepper button:disabled {
+  opacity: .35;
+  cursor: default;
+}
 
 /* ===================== Modals ===================== */
 .modal-overlay {
@@ -1041,6 +1067,29 @@ main.drag-active::before {
 }
 .modal-knapper { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ===================== Kontakt / tilbakemelding ===================== */
+.kontakt-intro { font-size: .9rem; color: var(--muted); margin: 0; }
+.kontakt-valg { display: flex; flex-direction: column; gap: 10px; }
+.kontakt-lenke {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  transition: background .12s, border-color .12s;
+}
+.kontakt-lenke span {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+  font-size: .82rem;
+  color: var(--muted);
+}
+.kontakt-lenke:hover { background: var(--primary-l); border-color: var(--primary); }
+
 /* ===================== Responsive ===================== */
 @media (max-width: 960px) {
   main {
@@ -1050,7 +1099,7 @@ main.drag-active::before {
   main > .card {
     grid-column: auto !important;
   }
-  .drag-handle, .btn-span { display: none; }
+  .drag-handle, .kl-col-resizer { display: none; }
   #notat-textarea { min-height: 70px; }
   .shortcut-hint { display: none; }
 }
