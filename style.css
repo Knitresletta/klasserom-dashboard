@@ -268,6 +268,18 @@ header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-
   border-color: rgba(255,255,255,0.6);
   font-weight: 700;
 }
+.side-tab-input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 2px solid var(--primary);
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  width: 9ch;
+  min-width: 9ch;
+}
 .side-tab:hover:not(.aktiv) { background: rgba(255,255,255,0.25); }
 .side-slett { font-size: 0.65rem; opacity: 0.7; cursor: pointer; line-height: 1; }
 .side-slett:hover { opacity: 1; }

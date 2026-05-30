@@ -1137,6 +1137,22 @@ function settOppDragOgDrop() {
 }
 
 // ===================== Sider =====================
+// Manuell dobbeltklikk-deteksjon: fanene bygges på nytt ved hvert klikk
+// (byttSide → renderSiderNav), så de to klikkene i et dobbeltklikk lander på
+// ulike DOM-noder og nettleserens dblclick-event fyrer ikke pålitelig. Vi måler
+// derfor selv tiden mellom to klikk på samme fane — andre klikk åpner omdøping.
+let sisteSideKlikk = { idx: -1, tid: 0 };
+function håndterSideKlikk(idx) {
+  const nå = Date.now();
+  if (sisteSideKlikk.idx === idx && nå - sisteSideKlikk.tid < 400) {
+    sisteSideKlikk = { idx: -1, tid: 0 };
+    startSideRename(idx);
+  } else {
+    sisteSideKlikk = { idx, tid: nå };
+    byttSide(idx);
+  }
+}
+
 function renderSiderNav() {
   const nav = document.getElementById('sider-nav');
   if (!nav) return;
@@ -1145,7 +1161,8 @@ function renderSiderNav() {
     const btn = document.createElement('button');
     btn.className = 'side-tab' + (idx === state.aktiv_side ? ' aktiv' : '');
     btn.textContent = side.navn;
-    btn.onclick = () => byttSide(idx);
+    btn.onclick = () => håndterSideKlikk(idx);
+    btn.title = 'Dobbeltklikk for å gi nytt navn';
     if (state.sider.length > 1) {
       const x = document.createElement('span');
       x.className = 'side-slett';
@@ -1161,6 +1178,39 @@ function renderSiderNav() {
   leggTil.title = 'Legg til side';
   leggTil.onclick = leggTilSide;
   nav.appendChild(leggTil);
+}
+
+// Inline omdøping: dobbeltklikk på en fane bytter den til et tekstfelt.
+// Enter / klikk utenfor lagrer, Esc avbryter, tomt navn beholder det gamle.
+function startSideRename(idx) {
+  const nav = document.getElementById('sider-nav');
+  // Klikkene som inngår i dobbeltklikket har allerede kjørt byttSide() →
+  // renderSiderNav(), så den opprinnelige fane-knappen er løsrevet fra DOM.
+  // Finn derfor den LEVENDE fanen på nytt før vi bytter den ut med tekstfeltet.
+  const tab = nav && nav.children[idx];
+  if (!tab) return;
+  const input = document.createElement('input');
+  input.className = 'side-tab-input';
+  input.value = state.sider[idx].navn;
+  input.maxLength = 30;
+  tab.replaceWith(input);
+  input.focus();
+  input.select();
+  let ferdig = false;
+  const avslutt = lagre => {
+    if (ferdig) return;
+    ferdig = true;
+    if (lagre) {
+      const nytt = input.value.trim();
+      if (nytt) { state.sider[idx].navn = nytt; saveState(); }
+    }
+    renderSiderNav();
+  };
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); avslutt(true); }
+    if (e.key === 'Escape') { e.preventDefault(); avslutt(false); }
+  });
+  input.addEventListener('blur', () => avslutt(true));
 }
 
 function byttSide(idx) {
@@ -1192,6 +1242,10 @@ function leggTilSide() {
     w.id === 'card-notat-1' ? { ...w, id: `card-${notatId}` } :
     w.id === 'card-bilde-1' ? { ...w, id: `card-${bildeId}` } : w
   );
+  // Ny side starter tom: alle widgets skjules som default. Læreren henter dem
+  // fram igjen via ⊞ Widgets-menyen. widget_layout beholdes intakt så posisjonene
+  // huskes når et kort slås på igjen.
+  side.widget_hidden = side.widget_layout.map(w => w.id);
   state.sider.push(side);
   // Opprett DOM-elementene for de nye instansene (applyLayout plasserer/skjuler dem ved byttSide)
   const notatEl = lagNotatElement(notatId);
@@ -1228,6 +1282,21 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.11</div>
+    <div class="logg-dato">30. mai 2026</div>
+    <ul>
+      <li>At man nå kan gi hver side sitt eget navn ved å dobbeltklikke på fanen (f.eks. «1A» eller «Mattegruppe»)</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.10</div>
+    <div class="logg-dato">30. mai 2026</div>
+    <ul>
+      <li>Appen har fått sitt eget faneikon (🏫) som vises i nettleserfanen — lettere å kjenne den igjen blant mange åpne faner</li>
+      <li>Nye sider starter nå helt tomme — ingen kort er synlige fra start. Du henter selv fram akkurat de widgetene du vil ha via <strong>⊞ Widgets</strong>-menyen</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v2.9</div>
     <div class="logg-dato">30. mai 2026</div>
@@ -1409,9 +1478,11 @@ const OPPDATERINGSLOGG_HTML = `
 const BRUKERVEILEDNING_HTML = `
   <h4>Sider — ett arbeidsbord per klasse</h4>
   <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side, klikk på et sidenavn for å bytte, og <strong>✕</strong> på en fane for å slette. Tanken er at <strong>hver side er sin egen klasse</strong>: lag side 1 for 1A og side 2 for 1B, og bytt fritt mellom dem gjennom dagen uten at noe blandes.</p>
+  <p><strong>Gi en side nytt navn</strong> ved å dobbeltklikke på fanen. Da blir den til et lite skrivefelt — skriv inn navnet (f.eks. «1A» eller «Mattegruppe») og trykk <kbd>Enter</kbd> for å lagre. <kbd>Esc</kbd> avbryter uten å endre navnet.</p>
   <p><strong>Per side</strong> (egen for hver klasse): elevlisten, grupper, alle trekk og backlogs (tilfeldig/ordenselev/klassebamse), dagsplanen, gruppebegrensninger, klassebamsens navn — pluss kolonneoppsett, notater og bilder.</p>
   <p><strong>Delt mellom alle sider:</strong> lagrede klasselister (📋 Lister — et felles bibliotek du kan laste inn i hvilken som helst side), tema, font, skriftstørrelse og timeren.</p>
   <p>Timeren er felles og fortsetter å gå selv om du bytter side. Vil du f.eks. vise et bilde på en egen side mens nedtellingen ruller, går det helt fint — timeren teller videre i bakgrunnen.</p>
+  <p>En <strong>ny side starter helt tom</strong> — ingen kort er synlige ennå. Du henter selv fram akkurat de kortene du vil ha via <strong>⊞ Widgets</strong>-menyen, så hver side blir nøyaktig slik du ønsker den. (Side 1 beholder sitt vanlige oppsett.)</p>
 
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
