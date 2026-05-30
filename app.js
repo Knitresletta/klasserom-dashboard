@@ -59,6 +59,7 @@ function defaultState() {
     bilder:       { 'bilde-1': { data: null } },
     notat_teller: 1,
     bilde_teller: 1,
+    eksport_signatur: null, // signatur av data ved siste eksport (for endrings-varsel)
     aktiv_side: 0,
     sider: [ nySide('Side 1') ],
   };
@@ -217,6 +218,7 @@ function saveState() {
   } catch (e) {
     console.warn('saveState:', e);
   }
+  oppdaterEksportVarsel();
 }
 
 // ===================== Date / Weather =====================
@@ -1227,6 +1229,15 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.9</div>
+    <div class="logg-dato">30. mai 2026</div>
+    <ul>
+      <li><strong>📤 Eksporter data</strong> i Klasserom-menyen lagrer alt — klasselister, sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder — til én backup-fil på maskinen din</li>
+      <li><strong>📥 Importer data</strong> henter alt tilbake fra en slik fil. Du kan enten erstatte alt, eller bare slå sammen de lagrede klasselistene (nyttig for å dele lister mellom lærere)</li>
+      <li>Et lite varsel <strong>«● Ueksporterte endringer»</strong> dukker opp i headeren når du har laget nye lister eller endret backlog siden forrige eksport. Klikk på det for å ta en ny backup</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.8</div>
     <div class="logg-dato">30. mai 2026</div>
     <ul>
@@ -1485,7 +1496,12 @@ const BRUKERVEILEDNING_HTML = `
   <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Der finner du to måter å nå utvikleren på: send en e-post til <strong>knitresletta@pm.me</strong>, eller opprett en sak (issue) på GitHub for å melde en feil eller foreslå en ny funksjon.</p>
 
   <h4>Lagring</h4>
-  <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>`;
+  <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>
+
+  <h4>📤 Eksportere og 📥 importere data</h4>
+  <p>Siden data kun bor i nettleseren din, er det lurt å ta en <strong>backup</strong>. Åpne <strong>Klasserom-menyen</strong> og velg <strong>📤 Eksporter data</strong> — da lastes det ned én fil som inneholder alt: klasselister, alle sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder.</p>
+  <p>For å hente data tilbake — eller flytte alt til en annen maskin eller nettleser — velg <strong>📥 Importer data</strong> og pek på fila. Du får velge mellom <strong>«Erstatt alt»</strong> (full gjenoppretting som overskriver det som ligger der nå) og <strong>«Slå sammen kun klasselister»</strong> (behold alt ditt, men hent inn de lagrede listene fra fila — fint for å dele klasselister mellom lærere).</p>
+  <p>Når du har laget nye lister eller endret en backlog siden forrige eksport, dukker det opp et lite <strong>«● Ueksporterte endringer»</strong>-merke øverst. Klikk på det for å ta en ny backup. Tips: eksporter med jevne mellomrom, så er du trygg om nettleserdata skulle bli tømt.</p>`;
 
 function åpneInfoModal(tittel, innholdHtml) {
   document.getElementById('info-modal-tittel').textContent = tittel;
@@ -1798,6 +1814,18 @@ function settOppHendelser() {
     klasseromDrop.classList.add('hidden');
     åpneInfoModal('❓ Brukerveiledning', BRUKERVEILEDNING_HTML);
   };
+  document.getElementById('btn-eksporter').onclick = () => {
+    klasseromDrop.classList.add('hidden');
+    eksporterData();
+  };
+  document.getElementById('btn-importer').onclick = () => {
+    klasseromDrop.classList.add('hidden');
+    document.getElementById('import-fil').click();
+  };
+  document.getElementById('import-fil').addEventListener('change', e => håndterImportFil(e.target));
+  document.getElementById('btn-import-bekreft').onclick = bekreftImport;
+  document.getElementById('btn-import-avbryt').onclick  = () => { ventendeImport = null; lukkModal(); };
+  document.getElementById('eksport-varsel').onclick = e => { e.stopPropagation(); eksporterData(); };
   document.querySelectorAll('.tema-valg').forEach(el => {
     el.onclick = () => {
       settTema(el.dataset.tema);
@@ -2100,6 +2128,150 @@ function åpneTilbakemeldingModal() {
   document.getElementById('feedback-modal').style.display = 'flex';
 }
 
+// ===================== Eksport / import av data =====================
+const EKSPORT_FORMAT_VERSJON = 1;
+
+// Fingeravtrykk av det brukeren ville mistet uten eksport: lagrede lister + alle
+// siders backlogs. Brukes til endrings-varselet (punkt 3).
+function beregnEksportSignatur(s = state) {
+  return JSON.stringify({
+    lister: s.lister ?? {},
+    backlogs: (s.sider ?? []).map(side => [
+      side.tilfeldig_backlog, side.ordenselev_backlog, side.ulv_backlog,
+    ]),
+  });
+}
+
+function oppdaterEksportVarsel() {
+  const el = document.getElementById('eksport-varsel');
+  if (!el) return;
+  const harData = Object.keys(state.lister ?? {}).length > 0 ||
+    (state.sider ?? []).some(s =>
+      s.tilfeldig_backlog.length || s.ordenselev_backlog.length || s.ulv_backlog.length);
+  const endret = state.eksport_signatur !== beregnEksportSignatur();
+  el.classList.toggle('hidden', !(harData && endret));
+}
+
+function eksporterData() {
+  const nå = new Date();
+  const data = {
+    app: 'klasserom-dashboard',
+    format_versjon: EKSPORT_FORMAT_VERSJON,
+    eksportert: nå.toISOString(),
+    innhold: {
+      preferanser: {
+        tema:              state.tema,
+        font:              state.font,
+        skrift_størrelse:  state.skrift_størrelse,
+        widget_størrelser: state.widget_størrelser,
+        timer_varighet:    state.timer_varighet,
+      },
+      klasselister: state.lister,
+      sider:        state.sider,
+      aktiv_side:   state.aktiv_side,
+      widgetinnhold: {
+        notater:      state.notater,
+        bilder:       state.bilder,
+        notat_teller: state.notat_teller,
+        bilde_teller: state.bilde_teller,
+      },
+    },
+  };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const dato = `${nå.getFullYear()}-${String(nå.getMonth() + 1).padStart(2, '0')}-${String(nå.getDate()).padStart(2, '0')}`;
+  a.href = url;
+  a.download = `klasserom-backup-${dato}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  // Marker som eksportert → endrings-varselet forsvinner til neste endring
+  state.eksport_signatur = beregnEksportSignatur();
+  saveState();
+  notify('📤 Data eksportert');
+}
+
+let ventendeImport = null; // parsed fil mellom valg av fil og bekreftelse av modus
+
+function håndterImportFil(input) {
+  const fil = input.files?.[0];
+  input.value = ''; // tillat å velge samme fil igjen senere
+  if (!fil) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    let data;
+    try {
+      data = JSON.parse(e.target.result);
+    } catch (_) {
+      notify('Kunne ikke lese fila — er det en gyldig JSON-fil?', 'error');
+      return;
+    }
+    if (!data || data.app !== 'klasserom-dashboard' || !data.innhold) {
+      notify('Dette ser ikke ut som en klasserom-backup', 'error');
+      return;
+    }
+    if (data.format_versjon > EKSPORT_FORMAT_VERSJON) {
+      notify('Fila er laget i en nyere versjon — importerer det jeg kjenner igjen', 'warning');
+    }
+    ventendeImport = data;
+    const antL = Object.keys(data.innhold.klasselister ?? {}).length;
+    const antS = (data.innhold.sider ?? []).length;
+    document.getElementById('import-info').textContent =
+      `Fil fra ${(data.eksportert || '').slice(0, 10) || 'ukjent dato'} — ${antS} side(r), ${antL} lagret liste(r).`;
+    document.querySelector('input[name="import-modus"][value="erstatt"]').checked = true;
+    åpneModal('modal-import');
+  };
+  reader.readAsText(fil);
+}
+
+function bekreftImport() {
+  const data  = ventendeImport;
+  if (!data) { lukkModal(); return; }
+  const modus = document.querySelector('input[name="import-modus"]:checked')?.value ?? 'erstatt';
+  const innhold = data.innhold ?? {};
+
+  if (modus === 'flett_lister') {
+    // Behold alt nåværende; legg til/oppdater kun de lagrede listene
+    Object.assign(state.lister, innhold.klasselister ?? {});
+    saveState();
+    lukkModal();
+    ventendeImport = null;
+    const n = Object.keys(innhold.klasselister ?? {}).length;
+    notify(`📥 ${n} liste(r) flettet inn`);
+    return;
+  }
+
+  // Erstatt alt: bygg en ny tilstand tolerant (manglende felt → dagens defaults)
+  const ny   = defaultState();
+  const pref = innhold.preferanser ?? {};
+  if (pref.tema              !== undefined) ny.tema = pref.tema;
+  if (pref.font              !== undefined) ny.font = pref.font;
+  if (pref.skrift_størrelse  !== undefined) ny.skrift_størrelse = pref.skrift_størrelse;
+  if (pref.widget_størrelser !== undefined) ny.widget_størrelser = pref.widget_størrelser;
+  if (pref.timer_varighet    !== undefined) ny.timer_varighet = pref.timer_varighet;
+  if (innhold.klasselister   !== undefined) ny.lister = innhold.klasselister;
+  if (Array.isArray(innhold.sider) && innhold.sider.length) ny.sider = innhold.sider;
+  const wi = innhold.widgetinnhold ?? {};
+  if (wi.notater      !== undefined) ny.notater = wi.notater;
+  if (wi.bilder       !== undefined) ny.bilder = wi.bilder;
+  if (wi.notat_teller !== undefined) ny.notat_teller = wi.notat_teller;
+  if (wi.bilde_teller !== undefined) ny.bilde_teller = wi.bilde_teller;
+  ny.aktiv_side = Math.min(
+    typeof innhold.aktiv_side === 'number' ? innhold.aktiv_side : 0,
+    ny.sider.length - 1,
+  );
+  // En nettopp importert backup regnes som «eksportert» (ingen ulagrede endringer)
+  ny.eksport_signatur = beregnEksportSignatur(ny);
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(ny));
+  ventendeImport = null;
+  location.reload(); // enkleste, sikreste vei til full re-render fra ny tilstand
+}
+
 function init() {
   oppdaterDato();
   hentVær();
@@ -2148,6 +2320,7 @@ function init() {
   settOppDragOgDrop();
   renderSiderNav();
   oppdaterKolonneStepper();
+  oppdaterEksportVarsel();
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -17,6 +17,9 @@
       <div class="kl-dropdown-item" onclick="åpneTilbakemeldingModal()">💬 Tilbakemelding</div>
       <div class="kl-dropdown-item" onclick="åpneBegrensningModal()">⛔ Gruppebegrensning</div>
       <div class="kl-dropdown-sep"></div>
+      <div class="kl-dropdown-item" id="btn-eksporter">📤 Eksporter data</div>
+      <div class="kl-dropdown-item" id="btn-importer">📥 Importer data</div>
+      <div class="kl-dropdown-sep"></div>
       <div class="kl-dropdown-item kl-has-submenu">
         🎨 Tema
         <div class="kl-submenu">
@@ -129,6 +132,7 @@
   </div>
   <div id="sider-nav" class="sider-nav"></div>
   <div id="header-dato"></div>
+  <button id="eksport-varsel" class="hidden" title="Du har endringer siden siste eksport — klikk for å eksportere nå">● Ueksporterte endringer</button>
   <div id="widget-meny-wrapper">
     <div id="vær-wrapper">
       <div id="header-ver" title="Klikk for detaljer"></div>
@@ -379,7 +383,30 @@
       <button class="btn btn-primary" id="btn-rediger-backlog-lukk">Ferdig</button>
     </div>
   </div>
+
+  <!-- Import-modal -->
+  <div id="modal-import" class="modal hidden">
+    <h3>📥 Importer data</h3>
+    <p id="import-info" class="import-info"></p>
+    <div class="import-valg">
+      <label class="import-modus">
+        <input type="radio" name="import-modus" value="erstatt" checked>
+        <span><strong>Erstatt alt</strong><br>Gjenoppretter hele tilstanden fra fila og overskriver alt som ligger her nå (lister, sider, innstillinger, notater og bilder).</span>
+      </label>
+      <label class="import-modus">
+        <input type="radio" name="import-modus" value="flett_lister">
+        <span><strong>Slå sammen kun klasselister</strong><br>Behold alt nåværende, legg bare til de lagrede listene fra fila.</span>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-import-avbryt">Avbryt</button>
+      <button class="btn btn-primary" id="btn-import-bekreft">Importer</button>
+    </div>
+  </div>
 </div>
+
+<!-- Skjult fil-input for import -->
+<input type="file" id="import-fil" accept="application/json,.json" style="display:none">
 
 <!-- Blackboard overlay -->
 <div id="blackboard-overlay" class="hidden">
