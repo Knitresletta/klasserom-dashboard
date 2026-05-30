@@ -375,7 +375,7 @@ header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-
 .str-knapp:hover { background: var(--primary-l); color: var(--primary); }
 .str-knapp.aktiv { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 700; }
 
-#notat-textarea.kursiv { font-style: italic; }
+textarea[id^="notat-textarea"].kursiv { font-style: italic; }
 
 /* ===================== Main layout ===================== */
 main {
@@ -656,7 +656,7 @@ body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary
 .timer-controls { display: flex; gap: 8px; }
 
 /* ===================== Notes ===================== */
-#notat-textarea {
+textarea[id^="notat-textarea"] {
   width: 100%;
   resize: none;
   border: 1px solid var(--border);
@@ -671,7 +671,7 @@ body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary
   transition: border-color .15s;
   background: var(--bg);
 }
-#notat-textarea:focus { border-color: var(--primary); background: var(--card); }
+textarea[id^="notat-textarea"]:focus { border-color: var(--primary); background: var(--card); }
 
 /* ===================== Dagsplan ===================== */
 #dagsplan-liste {
@@ -1139,7 +1139,7 @@ main.drag-active::before {
     grid-column: auto !important;
   }
   .drag-handle, .kl-col-resizer { display: none; }
-  #notat-textarea { min-height: 70px; }
+  textarea[id^="notat-textarea"] { min-height: 70px; }
   .shortcut-hint { display: none; }
 }
 @media (max-width: 620px) {

@@ -1227,6 +1227,13 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.8</div>
+    <div class="logg-dato">30. mai 2026</div>
+    <ul>
+      <li>Fikset: notatfeltet følger nå valgt font (og fikk tilbake riktig ramme og bakgrunn) — det hadde blitt stående på nettleserens standardfont</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.7</div>
     <div class="logg-dato">30. mai 2026</div>
     <ul>
