@@ -48,47 +48,53 @@ const MÅNEDER  = ['januar', 'februar', 'mars', 'april', 'mai', 'juni',
 // ===================== State =====================
 function defaultState() {
   return {
-    elever:              [],
-    dagsplan:            [],
-    ordenselev_backlog:  [],
-    ordenselev_valgte:   [],
-    ulv_backlog:         [],
-    ulv_valgt:           null,
-    ulv_navn:            'Klassebamse',
-    tilfeldig_backlog:   [],
-    tilfeldig_valgt:     null,
-    grupper:             null,
+    // Globalt scope — deles av alle sider
     lister:              {},
     timer_varighet:      300,
     tema: 'lyst',
     font: 'system',
     skrift_størrelse: 'normal',
     widget_størrelser: {},
-    gruppe_begrensninger: [],
     notater:      { 'notat-1': { tekst: '', kursiv: false } },
     bilder:       { 'bilde-1': { data: null } },
     notat_teller: 1,
     bilde_teller: 1,
     aktiv_side: 0,
-    sider: [
-      {
-        navn: 'Side 1',
-        kolonner: 3,
-        kol_bredder: [3, 4, 3],
-        widget_layout: [
-          { id: 'card-elever',     col: 1 },
-          { id: 'card-grupper',    col: 1 },
-          { id: 'card-tilfeldig',  col: 2 },
-          { id: 'card-ordenselev', col: 2 },
-          { id: 'card-ulv',        col: 2 },
-          { id: 'card-timer',      col: 3 },
-          { id: 'card-notat-1',    col: 3 },
-          { id: 'card-dagsplan',   col: 3 },
-          { id: 'card-bilde-1',    col: 3 },
-        ],
-        widget_hidden: [],
-      }
+    sider: [ nySide('Side 1') ],
+  };
+}
+
+// Et nytt, tomt side-objekt («klasse-arbeidsbord»). Inneholder alt som er
+// per-side scope: roster, grupper, trekk + backlogs, dagsplan, klassebamse-navn,
+// gruppebegrensninger — pluss kolonne- og widget-oppsett.
+function nySide(navn) {
+  return {
+    navn,
+    kolonner: 3,
+    kol_bredder: [3, 4, 3],
+    elever:              [],
+    grupper:             null,
+    dagsplan:            [],
+    tilfeldig_backlog:   [],
+    tilfeldig_valgt:     null,
+    ordenselev_backlog:  [],
+    ordenselev_valgte:   [],
+    ulv_backlog:         [],
+    ulv_valgt:           null,
+    ulv_navn:            'Klassebamse',
+    gruppe_begrensninger: [],
+    widget_layout: [
+      { id: 'card-elever',     col: 1 },
+      { id: 'card-grupper',    col: 1 },
+      { id: 'card-tilfeldig',  col: 2 },
+      { id: 'card-ordenselev', col: 2 },
+      { id: 'card-ulv',        col: 2 },
+      { id: 'card-timer',      col: 3 },
+      { id: 'card-notat-1',    col: 3 },
+      { id: 'card-dagsplan',   col: 3 },
+      { id: 'card-bilde-1',    col: 3 },
     ],
+    widget_hidden: [],
   };
 }
 
@@ -111,25 +117,31 @@ function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const state = Object.assign(defaultState(), JSON.parse(raw));
-      if (!state.sider) {
+      // VIKTIG: les migreringsbeslutninger fra det RÅ parsede objektet (_raw), ikke fra
+      // det default-flettede `state`. defaultState() fyller alltid sider[0] og notater/bilder
+      // med tomme defaults, så guards som "finnes feltet?" må sjekke _raw — ellers ser de
+      // alltid defaultene og migrerer aldri (→ datatap for gamle states). Se v2.7.
+      const _raw = JSON.parse(raw);
+      const state = Object.assign(defaultState(), _raw);
+      if (!_raw.sider) {
+        // Flatt pre-v1.9-state uten `sider`: bygg side 1 fra gammelt topp-nivå-oppsett
         state.sider = [{
           navn: 'Side 1',
-          widget_layout: state.widget_layout ?? defaultState().sider[0].widget_layout,
-          widget_hidden: state.widget_hidden ?? [],
+          widget_layout: _raw.widget_layout ?? defaultState().sider[0].widget_layout,
+          widget_hidden: _raw.widget_hidden ?? [],
         }];
         state.aktiv_side = 0;
         delete state.widget_layout;
         delete state.widget_hidden;
       }
       // Migrer flat notat/bilde-state til flerinstans-struktur
-      if (state.notat !== undefined && !state.notater) {
-        state.notater = { 'notat-1': { tekst: state.notat || '', kursiv: state.notat_kursiv || false } };
+      if (_raw.notat !== undefined && _raw.notater === undefined) {
+        state.notater = { 'notat-1': { tekst: _raw.notat || '', kursiv: _raw.notat_kursiv || false } };
         delete state.notat;
         delete state.notat_kursiv;
       }
-      if (state.bilde_data !== undefined && !state.bilder) {
-        state.bilder = { 'bilde-1': { data: state.bilde_data || null } };
+      if (_raw.bilde_data !== undefined && _raw.bilder === undefined) {
+        state.bilder = { 'bilde-1': { data: _raw.bilde_data || null } };
         delete state.bilde_data;
       }
       if (!state.notat_teller) state.notat_teller = Math.max(...Object.keys(state.notater || {}).map(k => parseInt(k.split('-')[1]) || 0), 0);
@@ -150,10 +162,43 @@ function loadState() {
           side.kol_bredder = standardBredder(side.kolonner);
         }
       }
-      // Migrer dagsplan-strenger til { tekst, ferdig }-objekter
-      state.dagsplan = (state.dagsplan || []).map(p =>
-        typeof p === 'string' ? { tekst: p, ferdig: false } : p
-      );
+      // Migrer current-state til per-side scope (v2.7): flytt gammelt topp-nivå
+      // (roster, trekk, backlogs, dagsplan, grupper, klassebamse-navn, begrensninger)
+      // inn i den første siden. Ikke-destruktivt.
+      const PER_SIDE_FELT = [
+        'elever', 'grupper', 'dagsplan', 'tilfeldig_backlog', 'tilfeldig_valgt',
+        'ordenselev_backlog', 'ordenselev_valgte', 'ulv_backlog', 'ulv_valgt',
+        'ulv_navn', 'gruppe_begrensninger',
+      ];
+      const flatLegacy = _raw.sider === undefined;
+      const førsteSide = state.sider[0];
+      for (const felt of PER_SIDE_FELT) {
+        // Flytt _raw sitt topp-nivå current-state inn i side 1.
+        // Flatt legacy: kopier alltid (default-siden har allerede tomme verdier).
+        // v2.6 med ekte sider-array: kopier kun når side 1 ikke selv hadde feltet.
+        if (_raw[felt] !== undefined && (flatLegacy || førsteSide[felt] === undefined)) {
+          førsteSide[felt] = _raw[felt];
+        }
+        delete state[felt];
+      }
+      // Sørg for at alle sider har komplette per-side-felter med fornuftige defaults
+      for (const side of state.sider) {
+        side.elever              ??= [];
+        side.grupper             ??= null;
+        side.dagsplan            ??= [];
+        side.tilfeldig_backlog   ??= [];
+        side.tilfeldig_valgt     ??= null;
+        side.ordenselev_backlog  ??= [];
+        side.ordenselev_valgte   ??= [];
+        side.ulv_backlog         ??= [];
+        side.ulv_valgt           ??= null;
+        side.ulv_navn            ??= 'Klassebamse';
+        side.gruppe_begrensninger ??= [];
+        // Migrer dagsplan-strenger til { tekst, ferdig }-objekter
+        side.dagsplan = side.dagsplan.map(p =>
+          typeof p === 'string' ? { tekst: p, ferdig: false } : p
+        );
+      }
       return state;
     }
   } catch (e) {
@@ -233,15 +278,16 @@ function visVærPopup() {
 function leggTilElev(navn) {
   navn = navn.trim().replace(/\b\p{L}/gu, l => l.toUpperCase());
   if (!navn) return;
-  if (state.elever.length >= 35) {
+  const s = aktivSide();
+  if (s.elever.length >= 35) {
     notify('Klasselisten er full (maks 35 elever)', 'warning');
     return false;
   }
-  if (state.elever.some(e => e.toLowerCase() === navn.toLowerCase())) {
+  if (s.elever.some(e => e.toLowerCase() === navn.toLowerCase())) {
     notify(`${navn} er allerede inne`, 'warning');
     return false;
   }
-  state.elever = [...state.elever, navn];
+  s.elever = [...s.elever, navn];
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -250,33 +296,37 @@ function leggTilElev(navn) {
 }
 
 function fjernElev(idx) {
-  const navn = state.elever[idx];
+  const s = aktivSide();
+  const navn = s.elever[idx];
   if (!navn) return;
-  state.elever = state.elever.filter((_, i) => i !== idx);
+  s.elever = s.elever.filter((_, i) => i !== idx);
   saveState();
   renderElever();
   renderAlleTrekk();
 }
 
 function fjernEleverBatch(fjernSett) {
-  state.elever = state.elever.filter(e => !fjernSett.has(e));
+  const s = aktivSide();
+  s.elever = s.elever.filter(e => !fjernSett.has(e));
   saveState();
   renderElever();
   renderAlleTrekk();
 }
 
 function ryddBackloger(fjernSett) {
-  state.ordenselev_backlog = state.ordenselev_backlog.filter(e => !fjernSett.has(e));
-  state.ordenselev_valgte  = state.ordenselev_valgte.filter(e => !fjernSett.has(e));
-  state.ulv_backlog        = state.ulv_backlog.filter(e => !fjernSett.has(e));
-  if (state.ulv_valgt && fjernSett.has(state.ulv_valgt)) state.ulv_valgt = null;
-  state.tilfeldig_backlog  = state.tilfeldig_backlog.filter(e => !fjernSett.has(e));
-  if (state.tilfeldig_valgt && fjernSett.has(state.tilfeldig_valgt)) state.tilfeldig_valgt = null;
+  const s = aktivSide();
+  s.ordenselev_backlog = s.ordenselev_backlog.filter(e => !fjernSett.has(e));
+  s.ordenselev_valgte  = s.ordenselev_valgte.filter(e => !fjernSett.has(e));
+  s.ulv_backlog        = s.ulv_backlog.filter(e => !fjernSett.has(e));
+  if (s.ulv_valgt && fjernSett.has(s.ulv_valgt)) s.ulv_valgt = null;
+  s.tilfeldig_backlog  = s.tilfeldig_backlog.filter(e => !fjernSett.has(e));
+  if (s.tilfeldig_valgt && fjernSett.has(s.tilfeldig_valgt)) s.tilfeldig_valgt = null;
 }
 
 function renderElever() {
+  const s = aktivSide();
   const liste   = document.getElementById('elev-liste');
-  const antall  = state.elever.length;
+  const antall  = s.elever.length;
 
   document.getElementById('elev-antall').textContent = antall;
   document.getElementById('elev-tekst').textContent  = antall === 1 ? 'elev inne' : 'elever inne';
@@ -288,11 +338,11 @@ function renderElever() {
 
   // Bygg kart: elevnavn → gruppeindeks
   const gruppeKart = new Map();
-  if (state.grupper) {
-    state.grupper.forEach((g, gi) => g.forEach(n => gruppeKart.set(n, gi)));
+  if (s.grupper) {
+    s.grupper.forEach((g, gi) => g.forEach(n => gruppeKart.set(n, gi)));
   }
 
-  liste.innerHTML = state.elever.map((navn, i) => {
+  liste.innerHTML = s.elever.map((navn, i) => {
     const gi        = gruppeKart.get(navn);
     const harGruppe = gi !== undefined;
     const farge     = harGruppe ? GRUPPE_FARGER[gi % GRUPPE_FARGER.length] : null;
@@ -318,36 +368,39 @@ function shuffle(arr) {
 
 // ===================== Draws =====================
 function trekkTilfeldig() {
-  if (!state.elever.length) { notify('Ingen elever inne', 'error'); return; }
-  const pool = state.elever.length > 1
-    ? state.elever.filter(e => e !== state.tilfeldig_valgt)
-    : state.elever;
-  state.tilfeldig_valgt = pool[Math.floor(Math.random() * pool.length)];
+  const s = aktivSide();
+  if (!s.elever.length) { notify('Ingen elever inne', 'error'); return; }
+  const pool = s.elever.length > 1
+    ? s.elever.filter(e => e !== s.tilfeldig_valgt)
+    : s.elever;
+  s.tilfeldig_valgt = pool[Math.floor(Math.random() * pool.length)];
   saveState();
   renderTilfeldig();
 }
 
 function trekkTilfeldigBacklog() {
-  if (!state.elever.length) { notify('Ingen elever inne', 'error'); return; }
-  const pool = state.elever.filter(e => !state.tilfeldig_backlog.includes(e));
+  const s = aktivSide();
+  if (!s.elever.length) { notify('Ingen elever inne', 'error'); return; }
+  const pool = s.elever.filter(e => !s.tilfeldig_backlog.includes(e));
   if (!pool.length) {
     notify('Alle elever er trukket — nullstill for å starte på nytt', 'warning');
     return;
   }
-  state.tilfeldig_valgt = pool[Math.floor(Math.random() * pool.length)];
-  if (!state.tilfeldig_backlog.includes(state.tilfeldig_valgt)) {
-    state.tilfeldig_backlog.push(state.tilfeldig_valgt);
+  s.tilfeldig_valgt = pool[Math.floor(Math.random() * pool.length)];
+  if (!s.tilfeldig_backlog.includes(s.tilfeldig_valgt)) {
+    s.tilfeldig_backlog.push(s.tilfeldig_valgt);
   }
   saveState();
   renderTilfeldig();
 }
 
 function trekkOrdenselev() {
-  if (state.elever.length < 2) {
-    notify(`Trenger minst 2 elever (${state.elever.length} inne)`, 'error');
+  const s = aktivSide();
+  if (s.elever.length < 2) {
+    notify(`Trenger minst 2 elever (${s.elever.length} inne)`, 'error');
     return;
   }
-  let pool = state.elever.filter(e => !state.ordenselev_backlog.includes(e));
+  let pool = s.elever.filter(e => !s.ordenselev_backlog.includes(e));
   if (!pool.length) {
     notify('Alle elever har vært ordenselev — nullstill for å starte på nytt', 'warning');
     return;
@@ -355,16 +408,16 @@ function trekkOrdenselev() {
   if (pool.length === 1) {
     // Siste i backlog: velg den, nullstill backlog, trekk en til fra resten
     const siste  = pool[0];
-    state.ordenselev_backlog = [];
-    const andre  = state.elever.filter(e => e !== siste);
+    s.ordenselev_backlog = [];
+    const andre  = s.elever.filter(e => e !== siste);
     const valgt2 = andre[Math.floor(Math.random() * andre.length)];
-    state.ordenselev_valgte = [siste, valgt2];
-    state.ordenselev_backlog = [...state.ordenselev_valgte];
+    s.ordenselev_valgte = [siste, valgt2];
+    s.ordenselev_backlog = [...s.ordenselev_valgte];
   } else {
     const shufflet = shuffle(pool);
-    state.ordenselev_valgte = shufflet.slice(0, 2);
-    state.ordenselev_valgte.forEach(e => {
-      if (!state.ordenselev_backlog.includes(e)) state.ordenselev_backlog.push(e);
+    s.ordenselev_valgte = shufflet.slice(0, 2);
+    s.ordenselev_valgte.forEach(e => {
+      if (!s.ordenselev_backlog.includes(e)) s.ordenselev_backlog.push(e);
     });
   }
   saveState();
@@ -372,73 +425,77 @@ function trekkOrdenselev() {
 }
 
 function trekkUlv() {
-  const pool = state.elever.filter(e => !state.ulv_backlog.includes(e));
+  const s = aktivSide();
+  const pool = s.elever.filter(e => !s.ulv_backlog.includes(e));
   if (!pool.length) {
-    if (state.elever.length) notify('Alle elever har hatt bamsen — nullstill for å starte på nytt', 'warning');
+    if (s.elever.length) notify('Alle elever har hatt bamsen — nullstill for å starte på nytt', 'warning');
     else notify('Ingen elever inne', 'error');
     return;
   }
-  state.ulv_valgt = pool[Math.floor(Math.random() * pool.length)];
-  if (!state.ulv_backlog.includes(state.ulv_valgt)) state.ulv_backlog.push(state.ulv_valgt);
+  s.ulv_valgt = pool[Math.floor(Math.random() * pool.length)];
+  if (!s.ulv_backlog.includes(s.ulv_valgt)) s.ulv_backlog.push(s.ulv_valgt);
   saveState();
   renderUlv();
-  notify(`${state.ulv_valgt} tar med ${state.ulv_navn.toLowerCase()} hjem!`);
+  notify(`${s.ulv_valgt} tar med ${s.ulv_navn.toLowerCase()} hjem!`);
 }
 
 function renderTilfeldig() {
+  const s = aktivSide();
   const vis = document.getElementById('tilfeldig-vis');
   const bl  = document.getElementById('tilfeldig-backlog-count');
-  if (state.tilfeldig_valgt) {
+  if (s.tilfeldig_valgt) {
     vis.className   = 'draw-result';
-    vis.innerHTML   = `<div class="drawn-name">🙋 ${esc(state.tilfeldig_valgt)}</div>`;
+    vis.innerHTML   = `<div class="drawn-name">🙋 ${esc(s.tilfeldig_valgt)}</div>`;
   } else {
     vis.className   = 'draw-placeholder';
     vis.textContent = 'Trykk Trekk for å velge en tilfeldig elev';
   }
-  if (state.tilfeldig_backlog.length) {
+  if (s.tilfeldig_backlog.length) {
     bl.className    = 'backlog-count';
-    bl.textContent  = `${state.tilfeldig_backlog.length} trukket (backlog)`;
+    bl.textContent  = `${s.tilfeldig_backlog.length} trukket (backlog)`;
   } else {
     bl.className    = 'backlog-count hidden';
   }
 }
 
 function renderOrdenselev() {
+  const s = aktivSide();
   const vis = document.getElementById('ordenselev-vis');
   const bl  = document.getElementById('ordenselev-backlog-count');
-  if (state.ordenselev_valgte.length) {
+  if (s.ordenselev_valgte.length) {
     vis.className = 'draw-result';
     vis.innerHTML = `<div class="draw-pair">
-      ${state.ordenselev_valgte.map(n => `<div class="draw-pair-item">⭐ ${esc(n)}</div>`).join('')}
+      ${s.ordenselev_valgte.map(n => `<div class="draw-pair-item">⭐ ${esc(n)}</div>`).join('')}
     </div>`;
   } else {
     vis.className   = 'draw-placeholder';
     vis.textContent = 'Trykk Trekk for å velge to ordenselever';
   }
-  if (state.ordenselev_backlog.length) {
+  if (s.ordenselev_backlog.length) {
     bl.className   = 'backlog-count';
-    bl.textContent = `${state.ordenselev_backlog.length} i backlog`;
+    bl.textContent = `${s.ordenselev_backlog.length} i backlog`;
   } else {
     bl.className   = 'backlog-count hidden';
   }
 }
 
 function renderUlv() {
+  const s = aktivSide();
   const vis  = document.getElementById('ulv-vis');
   const bl   = document.getElementById('ulv-backlog-count');
-  const navn = state.ulv_navn || 'Klassebamse';
+  const navn = s.ulv_navn || 'Klassebamse';
   document.querySelector('#card-ulv h2').textContent = navn;
   document.getElementById('btn-ulv').textContent = `Trekk ${navn.toLowerCase()}`;
-  if (state.ulv_valgt) {
+  if (s.ulv_valgt) {
     vis.className = 'draw-result ulv-result';
-    vis.innerHTML = `<div class="drawn-name">${esc(state.ulv_valgt)}</div>`;
+    vis.innerHTML = `<div class="drawn-name">${esc(s.ulv_valgt)}</div>`;
   } else {
     vis.className   = 'draw-placeholder';
     vis.textContent = `Trykk Trekk for å velge hvem som tar med ${navn.toLowerCase()} hjem`;
   }
-  if (state.ulv_backlog.length) {
+  if (s.ulv_backlog.length) {
     bl.className   = 'backlog-count';
-    bl.textContent = `${state.ulv_backlog.length} i backlog`;
+    bl.textContent = `${s.ulv_backlog.length} i backlog`;
   } else {
     bl.className   = 'backlog-count hidden';
   }
@@ -567,12 +624,12 @@ function lagNotatElement(instansId) {
   div.className = 'card';
   div.id = `card-${instansId}`;
   div.innerHTML = `
+    <button class="kl-widget-close" onclick="fjernNotat('${instansId}')" title="Slett dette notatet">✕</button>
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>📝 Notat</h2>
       <div class="card-controls">
         <button class="btn btn-ghost btn-sm btn-icon" id="btn-notat-kursiv-${instansId}" title="Kursiv tekst">𝐼</button>
-        <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernNotat('${instansId}')" title="Slett notat">✕</button>
       </div>
     </div>
     <textarea id="notat-textarea-${instansId}" placeholder="Skriv notat her…"></textarea>
@@ -636,19 +693,19 @@ function fjernNotat(instansId) {
 
 // ===================== Dagsplan =====================
 function leggTilDagsplan(tekst) {
-  state.dagsplan.push({ tekst, ferdig: false });
+  aktivSide().dagsplan.push({ tekst, ferdig: false });
   saveState();
   renderDagsplan();
 }
 
 function fjernDagsplan(idx) {
-  state.dagsplan.splice(idx, 1);
+  aktivSide().dagsplan.splice(idx, 1);
   saveState();
   renderDagsplan();
 }
 
 function toggleDagsplanFerdig(idx) {
-  const p = state.dagsplan[idx];
+  const p = aktivSide().dagsplan[idx];
   if (!p) return;
   p.ferdig = !p.ferdig;
   saveState();
@@ -656,12 +713,13 @@ function toggleDagsplanFerdig(idx) {
 }
 
 function renderDagsplan() {
+  const dagsplan = aktivSide().dagsplan;
   const liste = document.getElementById('dagsplan-liste');
-  if (!state.dagsplan.length) {
+  if (!dagsplan.length) {
     liste.innerHTML = '<p class="tom-tekst" style="padding:4px">Tom — trykk "+ Legg til punkt"</p>';
     return;
   }
-  liste.innerHTML = state.dagsplan.map((p, i) => `
+  liste.innerHTML = dagsplan.map((p, i) => `
     <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}" onclick="toggleDagsplanFerdig(${i})">
       <span class="dagsplan-prikk">●</span>
       <span class="dagsplan-tekst">${esc(p.tekst)}</span>
@@ -671,15 +729,16 @@ function renderDagsplan() {
 
 // ===================== Grupper =====================
 function lagGrupper(antall) {
-  if (state.elever.length < 2) { notify('Trenger minst 2 elever', 'warning'); return; }
-  if (antall > state.elever.length) {
-    notify(`For mange grupper — bare ${state.elever.length} elever inne`, 'warning');
+  const s = aktivSide();
+  if (s.elever.length < 2) { notify('Trenger minst 2 elever', 'warning'); return; }
+  if (antall > s.elever.length) {
+    notify(`For mange grupper — bare ${s.elever.length} elever inne`, 'warning');
     return;
   }
-  const begrensninger = state.gruppe_begrensninger ?? [];
+  const begrensninger = s.gruppe_begrensninger ?? [];
   let grupper = null;
   for (let forsøk = 0; forsøk < 200; forsøk++) {
-    const shufflet = shuffle(state.elever);
+    const shufflet = shuffle(s.elever);
     const kandidat = Array.from({ length: antall }, () => []);
     shufflet.forEach((e, i) => kandidat[i % antall].push(e));
     const ok = begrensninger.every(([a, b]) =>
@@ -691,7 +750,7 @@ function lagGrupper(antall) {
     notify('Klarte ikke lage grupper uten å bryte begrensningene — prøv færre par eller flere grupper', 'warning');
     return;
   }
-  state.grupper = grupper;
+  s.grupper = grupper;
   saveState();
   renderGrupper();
   renderElever();
@@ -700,7 +759,7 @@ function lagGrupper(antall) {
 }
 
 function fjernGrupper() {
-  state.grupper = null;
+  aktivSide().grupper = null;
   saveState();
   renderGrupper();
   renderElever();
@@ -708,11 +767,11 @@ function fjernGrupper() {
 
 function renderGrupper() {
   const vis = document.getElementById('grupper-vis');
-  if (!state.grupper) {
+  if (!aktivSide().grupper) {
     vis.innerHTML = '<p class="tom-tekst">Ingen grupper aktive — trykk <kbd>🎲 Del inn</kbd></p>';
     return;
   }
-  vis.innerHTML = state.grupper.map((gruppe, gi) => {
+  vis.innerHTML = aktivSide().grupper.map((gruppe, gi) => {
     const f = GRUPPE_FARGER[gi % GRUPPE_FARGER.length];
     return `<div class="gruppe-kort" style="background:${f.bg}">
       <div class="gruppe-tittel" style="color:${f.text}">Gruppe ${gi + 1}</div>
@@ -723,19 +782,21 @@ function renderGrupper() {
 
 // ===================== Lister =====================
 function lagreListe(navn) {
-  if (!state.elever.length) { notify('Ingen elever inne å lagre', 'warning'); return false; }
+  const s = aktivSide();
+  if (!s.elever.length) { notify('Ingen elever inne å lagre', 'warning'); return false; }
   const erNy = !state.lister[navn];
-  state.lister[navn] = [...state.elever];
+  state.lister[navn] = [...s.elever]; // lagrede lister er globale; rosteren er per side
   saveState();
-  notify(`📋 '${navn}' ${erNy ? 'lagret' : 'oppdatert'} (${state.elever.length} elever)`);
+  notify(`📋 '${navn}' ${erNy ? 'lagret' : 'oppdatert'} (${s.elever.length} elever)`);
   return true;
 }
 
 function lastListe(navn) {
   const elever = state.lister[navn];
   if (!elever) return;
-  state.elever  = [...elever];
-  state.grupper = null;
+  const s = aktivSide();
+  s.elever  = [...elever]; // last den globale lista inn i denne sidens roster
+  s.grupper = null;
   saveState();
   renderElever();
   renderAlleTrekk();
@@ -775,8 +836,11 @@ function renderListerModal() {
 
 // ===================== Layout (drag) =====================
 function applyLayout() {
-  // Forsikre at widget_layout er komplett (for gamle lagrede states)
-  const defaults = defaultState().sider[0].widget_layout;
+  // Forsikre at de faste (singleton) widgetene finnes (for gamle lagrede states).
+  // notat/bilde utelates med vilje — de er flerinstans og eies per side, så de skal
+  // IKKE tvinges inn på en side som har sine egne (eller har fjernet dem).
+  const defaults = defaultState().sider[0].widget_layout
+    .filter(def => !def.id.startsWith('card-notat-') && !def.id.startsWith('card-bilde-'));
   defaults.forEach(def => {
     if (!aktivSide().widget_layout.find(w => w.id === def.id)) {
       aktivSide().widget_layout.push({ ...def });
@@ -807,6 +871,7 @@ function renderWidgetMeny() {
   const dropdown = document.getElementById('widget-dropdown');
   const skjult = aktivSide().widget_hidden ?? [];
 
+  // Single-instance widgets: av/på-checkbox (per side, som før)
   const statiske = Object.entries(WIDGET_NAVN).map(([id, navn]) => `
     <label class="widget-meny-rad">
       <input type="checkbox" ${skjult.includes(id) ? '' : 'checked'}
@@ -814,36 +879,19 @@ function renderWidgetMeny() {
       ${navn}
     </label>`).join('');
 
+  // Fler-instans widgets: ingen checkbox, bare "+". Tell hvor mange siden har.
   const aktivIds = aktivSide().widget_layout.map(w => w.id);
-  const notatRader = Object.keys(state.notater)
-    .filter(id => aktivIds.includes(`card-${id}`))
-    .map(instansId => {
-      const cardId = `card-${instansId}`;
-      return `<label class="widget-meny-rad">
-      <input type="checkbox" ${skjult.includes(cardId) ? '' : 'checked'}
-             onchange="toggleWidgetSynlighet('${cardId}', this.checked)">
-      📝 Notat
-    </label>`;
-    }).join('');
-
-  const bildeRader = Object.keys(state.bilder)
-    .filter(id => aktivIds.includes(`card-${id}`))
-    .map(instansId => {
-      const cardId = `card-${instansId}`;
-      return `<label class="widget-meny-rad">
-      <input type="checkbox" ${skjult.includes(cardId) ? '' : 'checked'}
-             onchange="toggleWidgetSynlighet('${cardId}', this.checked)">
-      🖼 Bilde
-    </label>`;
-    }).join('');
-
-  const leggTilKnapper = `
-    <div class="widget-meny-rad" style="gap:4px;flex-wrap:wrap;margin-top:4px">
-      <button class="btn btn-ghost btn-sm" onclick="leggTilNotat()">+ Notat</button>
-      <button class="btn btn-ghost btn-sm" onclick="leggTilBilde()">+ Bilde</button>
+  const antNotat = aktivIds.filter(id => id.startsWith('card-notat-')).length;
+  const antBilde = aktivIds.filter(id => id.startsWith('card-bilde-')).length;
+  const leggTil = `
+    <div class="widget-meny-sep"></div>
+    <div class="widget-meny-tittel">Legg til flere</div>
+    <div class="widget-meny-rad" style="gap:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="leggTilNotat()">+ 📝 Notat${antNotat ? ` (${antNotat})` : ''}</button>
+      <button class="btn btn-ghost btn-sm" onclick="leggTilBilde()">+ 🖼 Bilde${antBilde ? ` (${antBilde})` : ''}</button>
     </div>`;
 
-  dropdown.innerHTML = statiske + notatRader + bildeRader + leggTilKnapper;
+  dropdown.innerHTML = statiske + leggTil;
 }
 
 function toggleWidgetSynlighet(id, synlig) {
@@ -853,6 +901,7 @@ function toggleWidgetSynlighet(id, synlig) {
     : [...skjult, id];
   saveState();
   applyLayout();
+  renderWidgetMeny();
 }
 
 // ===================== Kolonner (antall + bredde, per side) =====================
@@ -1117,6 +1166,12 @@ function byttSide(idx) {
   saveState();
   byggKolonner();
   applyLayout();
+  // Re-rendre all per-side data for den nye siden (timeren er global og røres ikke)
+  renderElever();
+  renderAlleTrekk();
+  renderGrupper();
+  renderDagsplan();
+  oppdaterBegrensningSelecter();
   renderWidgetMeny();
   renderSiderNav();
   oppdaterKolonneStepper();
@@ -1124,32 +1179,40 @@ function byttSide(idx) {
 
 function leggTilSide() {
   const nr = state.sider.length + 1;
-  state.sider.push({
-    navn: `Side ${nr}`,
-    kolonner: 3,
-    kol_bredder: standardBredder(3),
-    widget_layout: defaultState().sider[0].widget_layout.map(w => ({ ...w })),
-    widget_hidden: [],
-  });
+  const side = nySide(`Side ${nr}`);
+  // Gi den nye siden EGNE notat- og bilde-instanser, ellers ville den delt
+  // card-notat-1/card-bilde-1 (og dermed innholdet) med side 1.
+  const notatId = `notat-${++state.notat_teller}`;
+  state.notater[notatId] = { tekst: '', kursiv: false };
+  const bildeId = `bilde-${++state.bilde_teller}`;
+  state.bilder[bildeId] = { data: null };
+  side.widget_layout = side.widget_layout.map(w =>
+    w.id === 'card-notat-1' ? { ...w, id: `card-${notatId}` } :
+    w.id === 'card-bilde-1' ? { ...w, id: `card-${bildeId}` } : w
+  );
+  state.sider.push(side);
+  // Opprett DOM-elementene for de nye instansene (applyLayout plasserer/skjuler dem ved byttSide)
+  const notatEl = lagNotatElement(notatId);
+  document.querySelector('.col-wrapper[data-col="1"]').appendChild(notatEl);
+  setupNotat(notatId);
+  const bildeEl = lagBildeElement(bildeId);
+  document.querySelector('.col-wrapper[data-col="1"]').appendChild(bildeEl);
+  setupBilde(bildeId);
+  settOppDragOgDrop();
   byttSide(state.sider.length - 1);
 }
 
 function fjernSide(idx) {
   if (state.sider.length <= 1) return;
   state.sider.splice(idx, 1);
-  state.aktiv_side = Math.min(state.aktiv_side, state.sider.length - 1);
-  saveState();
-  byggKolonner();
-  applyLayout();
-  renderWidgetMeny();
-  renderSiderNav();
-  oppdaterKolonneStepper();
+  // byttSide lagrer og re-rendrer alt (kolonner + per-side data) for den nye aktive siden
+  byttSide(Math.min(state.aktiv_side, state.sider.length - 1));
 }
 
 // ===================== Reset =====================
-function nullstillTilfeldig()   { state.tilfeldig_valgt = null; state.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
-function nullstillOrdenselev()  { state.ordenselev_valgte = []; state.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
-function nullstillUlv()         { state.ulv_valgt = null; state.ulv_backlog = []; saveState(); renderUlv(); notify('🐺 Ulv-trekk nullstilt'); }
+function nullstillTilfeldig()   { const s = aktivSide(); s.tilfeldig_valgt = null; s.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
+function nullstillOrdenselev()  { const s = aktivSide(); s.ordenselev_valgte = []; s.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
+function nullstillUlv()         { const s = aktivSide(); s.ulv_valgt = null; s.ulv_backlog = []; saveState(); renderUlv(); notify('🐺 Ulv-trekk nullstilt'); }
 function nullstillNotat() {
   for (const instansId of Object.keys(state.notater)) {
     state.notater[instansId].tekst = '';
@@ -1159,10 +1222,22 @@ function nullstillNotat() {
   saveState();
   notify('📝 Notat nullstilt');
 }
-function nullstillDagsplan()    { state.dagsplan = []; saveState(); renderDagsplan(); notify('📋 Dagsplan nullstilt'); }
+function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); renderDagsplan(); notify('📋 Dagsplan nullstilt'); }
 
 // ===================== Info modal =====================
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.7</div>
+    <div class="logg-dato">30. mai 2026</div>
+    <ul>
+      <li>Hver side er nå et eget klasse-arbeidsbord: elevliste, grupper, trekk (med backlogs), dagsplan, gruppebegrensninger og klassebamse-navn er <strong>per side</strong>. Lag én side per klasse — 1A på side 1, 1B på side 2 — og bytt fritt mellom dem uten å miste noe</li>
+      <li>Globalt på tvers av alle sider: lagrede klasselister, tema, font, skriftstørrelse og timeren</li>
+      <li>Timeren fortsetter å telle ned selv om du bytter side — lag gjerne en egen side for å vise bilder mens nedtellingen går videre</li>
+      <li>Hver side får egne notat- og bildekort — innholdet deles ikke lenger mellom sider</li>
+      <li>Fjern et kort direkte med <strong>✕</strong> i kortets øverste høyre hjørne (dukker opp når du holder musen over). Faste widgets skjules (hent dem tilbake i ⊞ Widgets), notat/bilde-kort slettes</li>
+      <li>⊞ Widgets-menyen: faste widgets har av/på-avkryssing, mens notat og bilde har «+» for å legge til så mange du vil</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v2.6</div>
     <div class="logg-dato">29. mai 2026</div>
@@ -1314,8 +1389,11 @@ const OPPDATERINGSLOGG_HTML = `
   </div>`;
 
 const BRUKERVEILEDNING_HTML = `
-  <h4>Sider</h4>
-  <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side. Klikk på et sidenavn for å bytte side. Klikk <strong>✕</strong> på en fane for å slette siden. Elever og andre data er delt mellom alle sider — widget-oppsettet, notater og bilder er per side.</p>
+  <h4>Sider — ett arbeidsbord per klasse</h4>
+  <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side, klikk på et sidenavn for å bytte, og <strong>✕</strong> på en fane for å slette. Tanken er at <strong>hver side er sin egen klasse</strong>: lag side 1 for 1A og side 2 for 1B, og bytt fritt mellom dem gjennom dagen uten at noe blandes.</p>
+  <p><strong>Per side</strong> (egen for hver klasse): elevlisten, grupper, alle trekk og backlogs (tilfeldig/ordenselev/klassebamse), dagsplanen, gruppebegrensninger, klassebamsens navn — pluss kolonneoppsett, notater og bilder.</p>
+  <p><strong>Delt mellom alle sider:</strong> lagrede klasselister (📋 Lister — et felles bibliotek du kan laste inn i hvilken som helst side), tema, font, skriftstørrelse og timeren.</p>
+  <p>Timeren er felles og fortsetter å gå selv om du bytter side. Vil du f.eks. vise et bilde på en egen side mens nedtellingen ruller, går det helt fint — timeren teller videre i bakgrunnen.</p>
 
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
@@ -1345,7 +1423,7 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Notat</h4>
   <p>Et fritekst-felt som vokser automatisk med innholdet. Lagres automatisk i nettleseren — du mister ikke notatet ved omlasting.</p>
-  <p>Du kan ha <strong>flere notatkort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Notat</strong>. Hvert notat kan flyttes og strekkes uavhengig av de andre. Slett et notat med <strong>✕</strong>-knappen i kortets overskrift. Notater er per side — side 1 og side 2 kan ha helt forskjellige notatkort.</p>
+  <p>Du kan ha <strong>flere notatkort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Notat</strong>. Hvert notat kan flyttes uavhengig av de andre. Slett et notat med <strong>✕</strong> i kortets øverste høyre hjørne. Notater er per side — side 1 og side 2 har helt forskjellige notatkort.</p>
 
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
@@ -1353,11 +1431,12 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>🖼 Bilde-widget</h4>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
-  <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong>-knappen i kortets overskrift. Bildekort er per side — forskjellige sider kan ha forskjellige bilder.</p>
+  <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong> i kortets øverste høyre hjørne. Bildekort er per side — forskjellige sider har forskjellige bilder.</p>
 
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Layouten huskes automatisk.</p>
-  <p>Vil du skjule et kort du ikke bruker? Trykk <strong>⊞ Widgets</strong> øverst til høyre og fjern avhukingen.</p>
+  <p><strong>Fjerne et kort:</strong> hold musen over kortet og klikk <strong>✕</strong> øverst i høyre hjørne. Faste widgets (elever, grupper, trekk, timer, dagsplan) blir bare skjult — du henter dem tilbake i <strong>⊞ Widgets</strong>-menyen. Notat- og bildekort slettes helt.</p>
+  <p><strong>⊞ Widgets-menyen</strong> (øverst til høyre) viser de faste widgetene med av/på-avkryssing per side. Notat og bilde har i stedet en <strong>«+»</strong> — trykk for å legge til så mange du vil. Hvert nytt kort er eget for den siden du står på.</p>
 
   <h4>Kolonnebredde og antall kolonner</h4>
   <p><strong>Juster bredden:</strong> hold musen mellom to kolonner — det dukker opp en tynn skillelinje. Dra i den for å gjøre den ene kolonnen bredere og den andre smalere. Breddene huskes per side.</p>
@@ -1435,7 +1514,7 @@ function åpneFjernElevModal() {
       <input type="checkbox" id="cb-toem-alle">
       <label for="cb-toem-alle" style="font-weight:700">Tøm alle</label>
     </div>
-    ${state.elever.map((navn, i) => `
+    ${aktivSide().elever.map((navn, i) => `
       <div class="checkbox-item">
         <input type="checkbox" id="cb-e${i}" data-idx="${i}">
         <label for="cb-e${i}">${esc(navn)}</label>
@@ -1625,7 +1704,7 @@ function settOppHendelser() {
   };
   document.getElementById('btn-lister-lukk').onclick = lukkModal;
   document.getElementById('btn-lister-lagre').onclick = () => {
-    if (!state.elever.length) { notify('Ingen elever inne å lagre', 'warning'); return; }
+    if (!aktivSide().elever.length) { notify('Ingen elever inne å lagre', 'warning'); return; }
     lukkModal();
     document.getElementById('input-liste-navn').value = '';
     åpneModal('modal-lagre-liste');
@@ -1662,11 +1741,11 @@ function settOppHendelser() {
     const toemAlle = document.getElementById('cb-toem-alle');
     let fjernes;
     if (toemAlle && toemAlle.checked) {
-      fjernes = [...state.elever];
+      fjernes = [...aktivSide().elever];
     } else {
       fjernes = Array.from(
         document.querySelectorAll('#fjern-elever-liste input[data-idx]:checked')
-      ).map(cb => state.elever[parseInt(cb.dataset.idx)]).filter(Boolean);
+      ).map(cb => aktivSide().elever[parseInt(cb.dataset.idx)]).filter(Boolean);
     }
     if (fjernes.length) {
       fjernEleverBatch(new Set(fjernes));
@@ -1801,14 +1880,14 @@ function settOppHendelser() {
 // ===================== Rename Klassebamse =====================
 function settOppRename() {
   document.getElementById('btn-ulv-rename').onclick = () => {
-    document.getElementById('rename-input').value = state.ulv_navn || 'Klassebamse';
+    document.getElementById('rename-input').value = aktivSide().ulv_navn || 'Klassebamse';
     åpneModal('modal-ulv-rename');
   };
   document.getElementById('btn-rename-avbryt').onclick = lukkModal;
   document.getElementById('btn-rename-lagre').onclick = () => {
     const nyttNavn = document.getElementById('rename-input').value.trim();
     if (nyttNavn) {
-      state.ulv_navn = nyttNavn;
+      aktivSide().ulv_navn = nyttNavn;
       saveState();
       renderUlv();
     }
@@ -1819,25 +1898,26 @@ function settOppRename() {
 
 // ===================== Backlog-editor =====================
 function åpneRedigerBacklog(type) {
+  const s = aktivSide();
   const erOrden   = type === 'ordenselev';
   const backlogKey = erOrden ? 'ordenselev_backlog' : 'ulv_backlog';
-  const tittel     = erOrden ? 'Rediger ordenselev-backlog' : `Rediger ${state.ulv_navn || 'Klassebamse'}-backlog`;
+  const tittel     = erOrden ? 'Rediger ordenselev-backlog' : `Rediger ${s.ulv_navn || 'Klassebamse'}-backlog`;
 
   document.getElementById('rediger-backlog-tittel').textContent = tittel;
 
   const chips = document.getElementById('rediger-backlog-chips');
   chips.innerHTML = '';
-  (state.elever || []).forEach(navn => {
-    const erBrukt = state[backlogKey].includes(navn);
+  (s.elever || []).forEach(navn => {
+    const erBrukt = s[backlogKey].includes(navn);
     const chip = document.createElement('div');
     chip.className = 'chip' + (erBrukt ? ' brukt' : '');
     chip.textContent = navn;
     chip.onclick = () => {
-      if (state[backlogKey].includes(navn)) {
-        state[backlogKey] = state[backlogKey].filter(n => n !== navn);
+      if (s[backlogKey].includes(navn)) {
+        s[backlogKey] = s[backlogKey].filter(n => n !== navn);
         chip.classList.remove('brukt');
       } else {
-        state[backlogKey].push(navn);
+        s[backlogKey].push(navn);
         chip.classList.add('brukt');
       }
       saveState();
@@ -1857,12 +1937,10 @@ function lagBildeElement(instansId) {
   div.className = 'card';
   div.id = `card-${instansId}`;
   div.innerHTML = `
+    <button class="kl-widget-close" onclick="fjernBildeWidget('${instansId}')" title="Slett dette bildekortet">✕</button>
     <div class="card-header">
       <span class="drag-handle" title="Dra for å flytte">⠿</span>
       <h2>🖼 Bilde</h2>
-      <div class="card-controls">
-        <button class="btn btn-ghost btn-sm btn-icon btn-slett" onclick="fjernBildeWidget('${instansId}')" title="Slett bilde-widget">✕</button>
-      </div>
     </div>
     <div class="card-body">
       <div id="bilde-vis-${instansId}" class="bilde-vis">
@@ -1961,17 +2039,18 @@ function leggTilBilde() {
 // ===================== Gruppebegrensning =====================
 function leggTilBegrensning(navn1, navn2) {
   if (!navn1 || !navn2 || navn1 === navn2) return;
-  const allerede = (state.gruppe_begrensninger ?? []).some(
+  const s = aktivSide();
+  const allerede = (s.gruppe_begrensninger ?? []).some(
     ([a, b]) => (a === navn1 && b === navn2) || (a === navn2 && b === navn1)
   );
   if (allerede) { notify('Dette paret er allerede lagt til', 'warning'); return; }
-  state.gruppe_begrensninger = [...(state.gruppe_begrensninger ?? []), [navn1, navn2]];
+  s.gruppe_begrensninger = [...(s.gruppe_begrensninger ?? []), [navn1, navn2]];
   saveState();
   renderBegrensninger();
 }
 
 function fjernBegrensning(idx) {
-  state.gruppe_begrensninger.splice(idx, 1);
+  aktivSide().gruppe_begrensninger.splice(idx, 1);
   saveState();
   renderBegrensninger();
 }
@@ -1980,7 +2059,7 @@ function renderBegrensninger() {
   const liste = document.getElementById('begrensning-liste');
   if (!liste) return;
   liste.innerHTML = '';
-  (state.gruppe_begrensninger ?? []).forEach(([a, b], i) => {
+  (aktivSide().gruppe_begrensninger ?? []).forEach(([a, b], i) => {
     const li = document.createElement('li');
     li.textContent = `${a} + ${b}`;
     const slett = document.createElement('button');
@@ -2001,8 +2080,9 @@ function oppdaterBegrensningSelecter() {
     const sel = document.getElementById(id);
     if (!sel) return;
     const val = sel.value;
-    sel.innerHTML = state.elever.map(e => `<option value="${e}">${e}</option>`).join('');
-    if (state.elever.includes(val)) sel.value = val;
+    const elever = aktivSide().elever;
+    sel.innerHTML = elever.map(e => `<option value="${e}">${e}</option>`).join('');
+    if (elever.includes(val)) sel.value = val;
   });
 }
 
