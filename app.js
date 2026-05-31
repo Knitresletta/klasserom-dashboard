@@ -1,8 +1,12 @@
 'use strict';
 
 // ===================== Constants =====================
+// Nøkkelen all tilstand lagres under i localStorage. Endres den, «mister» appen
+// gammel lagret data (den finner den ikke igjen) — så la den stå.
 const STORAGE_KEY = 'klasserom_state_v1';
 
+// Fargepaletten gruppene tildeles (bakgrunn + tekst), brukt både på gruppe-kort og
+// som prikk/farge i elevlista. Det er flere grupper enn farger? Da gjentas paletten.
 const GRUPPE_FARGER = [
   { bg: '#fce7f3', text: '#9d174d' },
   { bg: '#ede9fe', text: '#5b21b6' },
@@ -16,6 +20,8 @@ const GRUPPE_FARGER = [
   { bg: '#e0f2fe', text: '#075985' },
 ];
 
+// Visningsnavn for enkeltinstans-widgetene (de som har av/på-avkrysning i ⊞ Widgets).
+// Flerinstans-widgetene (notat/bilde) står IKKE her — de håndteres for seg.
 const WIDGET_NAVN = {
   'card-elever':     'Elever',
   'card-grupper':    'Grupper',
@@ -26,9 +32,12 @@ const WIDGET_NAVN = {
   'card-dagsplan':   '📋 Dagsplan',
 };
 
+// Koordinater for værvarselet (Eidsvoll). Brukes i kallet til met.no.
 const VÆR_LAT = 60.33;
 const VÆR_LON = 11.22;
 
+// Oversetter en yr.no-symbolkode (f.eks. "clearsky_day") til en passende emoji.
+// Sjekkene går fra mest til minst spesifikk; ukjente koder faller tilbake til ☁️.
 function yrEmoji(kode) {
   if (kode.includes('clearsky'))                         return '☀️';
   if (kode.includes('fair'))                             return '🌤️';
@@ -41,11 +50,15 @@ function yrEmoji(kode) {
   return '☁️';
 }
 
+// Norske navn for datoformatering. Rekkefølgen matcher Date: getDay() 0=søndag,
+// getMonth() 0=januar.
 const UKEDAGER = ['søndag', 'mandag', 'tirsdag', 'onsdag', 'torsdag', 'fredag', 'lørdag'];
 const MÅNEDER  = ['januar', 'februar', 'mars', 'april', 'mai', 'juni',
                   'juli', 'august', 'september', 'oktober', 'november', 'desember'];
 
 // ===================== State =====================
+// Bygger en helt fersk tilstand for en førstegangsbruker (ingen lagret data).
+// Globale felt (deles av alle sider) ligger her; per-side-felt ligger i nySide().
 function defaultState() {
   return {
     // Globalt scope — deles av alle sider
@@ -106,14 +119,19 @@ function standardBredder(n) {
   return Array.from({ length: n }, () => 1);
 }
 
+// Den ene, sentrale tilstanden hele appen leser og skriver. Lastes fra localStorage
+// (eller defaults) ved oppstart, og persisteres med saveState() etter hver endring.
 let state = loadState();
-let værData = null;
+let værData = null; // siste værsvar fra met.no, delt mellom topptekst og popup
 
 // Timer runtime state (not persisted)
 let timerRemaining = state.timer_varighet;
 let timerRunning   = false;
 let timerInterval  = null;
 
+// Leser lagret tilstand fra localStorage og migrerer eldre dataformater opp til
+// dagens struktur (flat state → sider, enkelt-notat → flerinstans osv.). Returnerer
+// defaultState() hvis ingenting er lagret eller parsing feiler — appen starter da blank.
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -208,10 +226,15 @@ function loadState() {
   return defaultState();
 }
 
+// Henter side-objektet brukeren ser på nå. Alt «per-side»-innhold (elever, trekk,
+// grupper, dagsplan osv.) leses og skrives gjennom denne hjelperen.
 function aktivSide() {
   return state.sider[state.aktiv_side ?? 0];
 }
 
+// Skriver hele tilstanden til localStorage. Kalles etter HVER mutasjon av `state`,
+// ellers går endringen tapt ved neste sideoppfriskning. Oppdaterer også eksport-
+// varselet, siden lagret data nå kan avvike fra forrige eksporterte backup.
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -222,15 +245,20 @@ function saveState() {
 }
 
 // ===================== Date / Weather =====================
+// Formaterer dagens dato på norsk, f.eks. «mandag 12. mai 2025».
 function norskDato() {
   const d = new Date();
   return `${UKEDAGER[d.getDay()]} ${d.getDate()}. ${MÅNEDER[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Skriver dagens dato inn i toppteksten. Kalles ved oppstart og hvert minutt.
 function oppdaterDato() {
   document.getElementById('header-dato').textContent = norskDato();
 }
 
+// Henter værvarsel for Eidsvoll fra met.no sitt åpne API og viser temperatur +
+// emoji i toppteksten. Svaret lagres i `værData` så vær-popupen kan gjenbruke det.
+// met.no krever en identifiserende User-Agent. Feil svelges stille (vær er pynt).
 async function hentVær() {
   try {
     const res = await fetch(
@@ -245,6 +273,8 @@ async function hentVær() {
   } catch (_) {}
 }
 
+// Bygger og åpner/lukker vær-popupen: nåværende forhold pluss de neste 8 timene.
+// Bruker det allerede hentede `værData` — gjør ikke nytt nettverkskall.
 function visVærPopup() {
   if (!værData) return;
   const ts  = værData.properties.timeseries;
@@ -277,7 +307,12 @@ function visVærPopup() {
 }
 
 // ===================== Students =====================
+// Legger en elev til den aktive sidens roster. Returnerer true ved suksess, false
+// hvis lista er full eller navnet allerede finnes (kaller-koden bruker det til å
+// avgjøre om modalen skal lukkes). Re-rendrer elevliste og trekk etterpå.
 function leggTilElev(navn) {
+  // Trim + gjør første bokstav i hvert ord stor (\b\p{L} = bokstav etter ordgrense,
+  // unicode-flagget u trengs for å treffe æ/ø/å). «kari nordmann» → «Kari Nordmann».
   navn = navn.trim().replace(/\b\p{L}/gu, l => l.toUpperCase());
   if (!navn) return;
   const s = aktivSide();
@@ -297,6 +332,7 @@ function leggTilElev(navn) {
   return true;
 }
 
+// Fjerner én elev ved listeindeks fra aktiv side og oppdaterer visningen.
 function fjernElev(idx) {
   const s = aktivSide();
   const navn = s.elever[idx];
@@ -307,6 +343,8 @@ function fjernElev(idx) {
   renderAlleTrekk();
 }
 
+// Fjerner flere elever på én gang (brukes av «Fjern elever»-modalen).
+// fjernSett er et Set av navn som skal ut — gir rask oppslag i filteret.
 function fjernEleverBatch(fjernSett) {
   const s = aktivSide();
   s.elever = s.elever.filter(e => !fjernSett.has(e));
@@ -315,6 +353,10 @@ function fjernEleverBatch(fjernSett) {
   renderAlleTrekk();
 }
 
+// Renser et sett med fjernede elever ut av alle backlogs/valgte-felt på aktiv side,
+// så et trekk ikke peker på en elev som ikke lenger er inne.
+// MERK: per i dag kalles denne ikke fra noe sted (fjernEleverBatch rydder ikke
+// backlogs). Beholdt som hjelper — kan kobles på fjerning hvis det blir aktuelt.
 function ryddBackloger(fjernSett) {
   const s = aktivSide();
   s.ordenselev_backlog = s.ordenselev_backlog.filter(e => !fjernSett.has(e));
@@ -325,6 +367,9 @@ function ryddBackloger(fjernSett) {
   if (s.tilfeldig_valgt && fjernSett.has(s.tilfeldig_valgt)) s.tilfeldig_valgt = null;
 }
 
+// Tegner elevlista på nytt: teller, tom-tilstand, og én rad per elev. Elever som
+// er fordelt i en gruppe får gruppens farge + en prikk, så listen og gruppe-kortene
+// matcher visuelt. Kalles etter enhver endring i roster eller grupper.
 function renderElever() {
   const s = aktivSide();
   const liste   = document.getElementById('elev-liste');
@@ -338,7 +383,7 @@ function renderElever() {
     return;
   }
 
-  // Bygg kart: elevnavn → gruppeindeks
+  // Bygg oppslag: elevnavn → gruppeindeks, så vi raskt kan finne fargen per elev under.
   const gruppeKart = new Map();
   if (s.grupper) {
     s.grupper.forEach((g, gi) => g.forEach(n => gruppeKart.set(n, gi)));
@@ -359,6 +404,8 @@ function renderElever() {
   oppdaterBegrensningSelecter();
 }
 
+// Returnerer en stokket KOPI av arrayet (originalen røres ikke) med Fisher–Yates:
+// gå bakfra og bytt hvert element med et tilfeldig element til venstre for det.
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -369,9 +416,12 @@ function shuffle(arr) {
 }
 
 // ===================== Draws =====================
+// Enkelt tilfeldig trekk: velg én elev. Eneste regel er at man ikke trekker
+// samme elev to ganger på rad (med mindre det bare er én elev inne).
 function trekkTilfeldig() {
   const s = aktivSide();
   if (!s.elever.length) { notify('Ingen elever inne', 'error'); return; }
+  // Utelat forrige trukne fra utvalget, så vi ikke får samme navn igjen umiddelbart.
   const pool = s.elever.length > 1
     ? s.elever.filter(e => e !== s.tilfeldig_valgt)
     : s.elever;
@@ -380,9 +430,13 @@ function trekkTilfeldig() {
   renderTilfeldig();
 }
 
+// «Rettferdig» tilfeldig trekk: hver elev trekkes nøyaktig én gang før noen
+// gjentas. Backlogen husker hvem som alt er trukket; når alle er brukt opp må
+// læreren nullstille. Forskjellen fra trekkTilfeldig er nettopp denne sporingen.
 function trekkTilfeldigBacklog() {
   const s = aktivSide();
   if (!s.elever.length) { notify('Ingen elever inne', 'error'); return; }
+  // Trekk kun blant elever som ikke alt står i backlogen.
   const pool = s.elever.filter(e => !s.tilfeldig_backlog.includes(e));
   if (!pool.length) {
     notify('Alle elever er trukket — nullstill for å starte på nytt', 'warning');
@@ -396,6 +450,8 @@ function trekkTilfeldigBacklog() {
   renderTilfeldig();
 }
 
+// Trekker TO ordenselever, og sørger for at alle har vært ordenselev før noen
+// gjentas (samme backlog-prinsipp som tilfeldig-backlog, men i par).
 function trekkOrdenselev() {
   const s = aktivSide();
   if (s.elever.length < 2) {
@@ -426,6 +482,8 @@ function trekkOrdenselev() {
   renderOrdenselev();
 }
 
+// Trekker hvem som får ta med klassebamsen («ulv») hjem. Backlog sikrer at alle
+// får tur før noen gjentas. Navnet på bamsen kan endres per side (s.ulv_navn).
 function trekkUlv() {
   const s = aktivSide();
   const pool = s.elever.filter(e => !s.ulv_backlog.includes(e));
@@ -441,6 +499,8 @@ function trekkUlv() {
   notify(`${s.ulv_valgt} tar med ${s.ulv_navn.toLowerCase()} hjem!`);
 }
 
+// Viser resultatet av tilfeldig-trekket (eller en oppfordring hvis ingen er trukket),
+// og en liten teller over hvor mange som ligger i backlogen.
 function renderTilfeldig() {
   const s = aktivSide();
   const vis = document.getElementById('tilfeldig-vis');
@@ -460,6 +520,7 @@ function renderTilfeldig() {
   }
 }
 
+// Viser de to trukne ordenselevene (eller en oppfordring), pluss backlog-teller.
 function renderOrdenselev() {
   const s = aktivSide();
   const vis = document.getElementById('ordenselev-vis');
@@ -481,6 +542,8 @@ function renderOrdenselev() {
   }
 }
 
+// Viser hvem som har bamsen, og oppdaterer samtidig kort-tittel og knappetekst til
+// sidens valgte bamsenavn (s.ulv_navn) — så «Klassebamse» kan hete hva som helst.
 function renderUlv() {
   const s = aktivSide();
   const vis  = document.getElementById('ulv-vis');
@@ -503,6 +566,7 @@ function renderUlv() {
   }
 }
 
+// Snarvei: tegn alle tre trekk-widgetene på nytt samtidig (etter f.eks. elevendring).
 function renderAlleTrekk() {
   renderTilfeldig();
   renderOrdenselev();
@@ -510,6 +574,10 @@ function renderAlleTrekk() {
 }
 
 // ===================== Timer =====================
+// Hovedknappen for timeren med tre tilstander avhengig av hvor vi er:
+//  - tiden er ute  → nullstill til full varighet (knappen blir «start på nytt»)
+//  - kjører        → pause (stopp intervallet)
+//  - pauset/klar   → start (tikk hvert sekund via setInterval)
 function timerToggle() {
   if (timerRemaining <= 0) {
     timerRemaining = state.timer_varighet;
@@ -530,6 +598,8 @@ function timerToggle() {
   renderTimer();
 }
 
+// Kjøres én gang i sekundet mens timeren går. Teller ned, og når den treffer 0:
+// stopp intervallet, varsle og spill en pip. Ellers bare dekrementer og re-render.
 function timerTick() {
   if (timerRemaining <= 0) {
     timerRunning = false;
@@ -545,6 +615,7 @@ function timerTick() {
   renderTimer();
 }
 
+// Stopper timeren og setter gjenstående tid tilbake til valgt varighet.
 function timerReset() {
   timerRunning   = false;
   clearInterval(timerInterval);
@@ -553,6 +624,8 @@ function timerReset() {
   renderTimer();
 }
 
+// Setter ny timer-varighet (i minutter → sekunder), stopper og nullstiller.
+// timer_varighet er global (lagres), så valget huskes på tvers av sider og økter.
 function timerSett(minutter) {
   state.timer_varighet = minutter * 60;
   timerRunning         = false;
@@ -564,6 +637,8 @@ function timerSett(minutter) {
   notify(`⏱️ Timer satt til ${minutter} min`);
 }
 
+// Oppdaterer hele timer-visningen: tallene (MM:SS), framdriftsbjelken, statustekst
+// og toggle-knappens utseende — alt avledet av timerRemaining og timerRunning.
 function renderTimer() {
   const min = Math.floor(timerRemaining / 60);
   const sek = timerRemaining % 60;
@@ -599,6 +674,9 @@ function renderTimer() {
   }
 }
 
+// Spiller en kort pipetone via Web Audio når timeren er ute — uten lydfil. Lager en
+// 880 Hz sinus som toner ut over 1,4 sek (exponentialRamp gir et naturlig «fade»).
+// Pakket i try/catch fordi AudioContext kan være blokkert i enkelte nettlesere.
 function spillPip() {
   try {
     const ctx  = new AudioContext();
@@ -616,11 +694,15 @@ function spillPip() {
 }
 
 // ===================== Notat =====================
+// Lar notat-feltet vokse med innholdet: nullstill høyden, les så scrollHeight
+// (full innholdshøyde) og sett den som fast høyde. Unngår indre scrollbar.
 function autoResizeNotat(ta) {
   ta.style.height = 'auto';
   ta.style.height = ta.scrollHeight + 'px';
 }
 
+// Bygger DOM-en for ett notat-kort (uten å sette den inn i siden). Notat er en
+// flerinstans-widget, så all id-bruk bakes med instansId (f.eks. «notat-2»).
 function lagNotatElement(instansId) {
   const div = document.createElement('div');
   div.className = 'card';
@@ -639,6 +721,9 @@ function lagNotatElement(instansId) {
   return div;
 }
 
+// Kobler et nylig innsatt notat-kort til tilstanden: fyll inn lagret tekst, koble
+// kursiv-knappen, og lagre tekstendringer. Lagringen er debouncet (500 ms etter
+// siste tastetrykk) så vi ikke skriver til localStorage på hvert eneste tegn.
 function setupNotat(instansId) {
   const ta = document.getElementById(`notat-textarea-${instansId}`);
   const btnKursiv = document.getElementById(`btn-notat-kursiv-${instansId}`);
@@ -664,6 +749,8 @@ function setupNotat(instansId) {
   });
 }
 
+// Oppretter et nytt, tomt notat-kort på aktiv side: bump telleren for en unik id,
+// registrer i state, bygg og sett inn DOM-en, og koble opp drag + layout på nytt.
 function leggTilNotat() {
   state.notat_teller++;
   const id = `notat-${state.notat_teller}`;
@@ -679,11 +766,15 @@ function leggTilNotat() {
   saveState();
 }
 
+// Fjerner et notat-kort fra DENNE siden. Selve notat-dataene slettes kun hvis ingen
+// andre sider også bruker kortet — ellers ville vi slette innhold som er synlig et
+// annet sted. (Samme mønster som fjernBildeWidget.)
 function fjernNotat(instansId) {
   const cardId = `card-${instansId}`;
   const side = aktivSide();
   side.widget_layout = side.widget_layout.filter(w => w.id !== cardId);
   side.widget_hidden  = (side.widget_hidden ?? []).filter(id => id !== cardId);
+  // Sjekk om noen side fortsatt har dette kortet i sin layout før vi sletter dataene.
   const ingenSiderBrukerDen = state.sider.every(s => !s.widget_layout.some(w => w.id === cardId));
   if (ingenSiderBrukerDen) {
     delete state.notater[instansId];
@@ -694,18 +785,22 @@ function fjernNotat(instansId) {
 }
 
 // ===================== Dagsplan =====================
+// Legger til ett punkt i dagsplanen. Hvert punkt er { tekst, ferdig } — ferdig
+// styrer overstrekingen i visningen.
 function leggTilDagsplan(tekst) {
   aktivSide().dagsplan.push({ tekst, ferdig: false });
   saveState();
   renderDagsplan();
 }
 
+// Fjerner ett dagsplan-punkt ved indeks.
 function fjernDagsplan(idx) {
   aktivSide().dagsplan.splice(idx, 1);
   saveState();
   renderDagsplan();
 }
 
+// Krysser av / fjerner avkryssing på et dagsplan-punkt (klikk på raden).
 function toggleDagsplanFerdig(idx) {
   const p = aktivSide().dagsplan[idx];
   if (!p) return;
@@ -714,6 +809,8 @@ function toggleDagsplanFerdig(idx) {
   renderDagsplan();
 }
 
+// Tegner dagsplanen på nytt. Hele raden er klikkbar for å toggle ferdig; slett-
+// knappen stopper propagering så et klikk på ✕ ikke også krysser av punktet.
 function renderDagsplan() {
   const dagsplan = aktivSide().dagsplan;
   const liste = document.getElementById('dagsplan-liste');
@@ -730,6 +827,10 @@ function renderDagsplan() {
 }
 
 // ===================== Grupper =====================
+// Deler elevene inn i `antall` tilfeldige grupper, og respekterer «hold fra hverandre»-
+// begrensninger (par som ikke skal havne sammen). Vi har ingen smart løser: vi stokker
+// og fordeler reihum, og prøver inntil 200 ganger til vi treffer et oppsett som ikke
+// bryter noen begrensning. Klarer vi ikke det, sier vi fra i stedet for å bryte reglene.
 function lagGrupper(antall) {
   const s = aktivSide();
   if (s.elever.length < 2) { notify('Trenger minst 2 elever', 'warning'); return; }
@@ -742,7 +843,9 @@ function lagGrupper(antall) {
   for (let forsøk = 0; forsøk < 200; forsøk++) {
     const shufflet = shuffle(s.elever);
     const kandidat = Array.from({ length: antall }, () => []);
+    // Del ut elevene reihum (i % antall) — gir jevnest mulig gruppestørrelse.
     shufflet.forEach((e, i) => kandidat[i % antall].push(e));
+    // Godkjenn kun hvis ingen gruppe inneholder begge i et forbudt par.
     const ok = begrensninger.every(([a, b]) =>
       !kandidat.some(g => g.includes(a) && g.includes(b))
     );
@@ -760,6 +863,8 @@ function lagGrupper(antall) {
   notify(`🎲 ${antall} grupper (${Math.min(...størrelser)}–${Math.max(...størrelser)} elever)`);
 }
 
+// Sletter den aktive gruppeinndelingen og oppdaterer både gruppe- og elevvisning
+// (elevlista mister da fargemarkeringen sin).
 function fjernGrupper() {
   aktivSide().grupper = null;
   saveState();
@@ -767,6 +872,8 @@ function fjernGrupper() {
   renderElever();
 }
 
+// Tegner gruppe-kortene, ett per gruppe, med en fast farge fra GRUPPE_FARGER
+// (modulo, så det går rundt hvis det er flere grupper enn farger).
 function renderGrupper() {
   const vis = document.getElementById('grupper-vis');
   if (!aktivSide().grupper) {
@@ -783,6 +890,8 @@ function renderGrupper() {
 }
 
 // ===================== Lister =====================
+// Lagrer aktiv sides roster som en navngitt liste. Listene er GLOBALE (deles av alle
+// sider), mens selve rosteren er per side — derfor kopierer vi navnene ut hit.
 function lagreListe(navn) {
   const s = aktivSide();
   if (!s.elever.length) { notify('Ingen elever inne å lagre', 'warning'); return false; }
@@ -793,6 +902,8 @@ function lagreListe(navn) {
   return true;
 }
 
+// Laster en lagret liste inn i aktiv sides roster. Overskriver dagens roster og
+// nullstiller grupper (de hører til den gamle elevsammensetningen).
 function lastListe(navn) {
   const elever = state.lister[navn];
   if (!elever) return;
@@ -806,6 +917,7 @@ function lastListe(navn) {
   notify(`📋 '${navn}' lastet (${elever.length} elever)`);
 }
 
+// Sletter en lagret liste (påvirker ikke rosteren som allerede er lastet inn).
 function slettListe(navn) {
   delete state.lister[navn];
   saveState();
@@ -813,6 +925,8 @@ function slettListe(navn) {
   renderListerModal();
 }
 
+// Tegner innholdet i «Lagrede lister»-modalen: én rad per liste med antall elever
+// og en slett-knapp. Klikk på raden laster lista; slett-knappen stopper propagering.
 function renderListerModal() {
   const innhold = document.getElementById('lister-innhold');
   const poster  = Object.entries(state.lister);
@@ -822,6 +936,9 @@ function renderListerModal() {
   }
   innhold.innerHTML = `<div class="modal-list">
     ${poster.map(([navn, elever]) => {
+      // Listenavnet havner inne i en inline onclick="lastListe(…)". JSON.stringify gir
+      // korrekt JS-streng (escaper anførselstegn/spesialtegn), og vi bytter " → &quot;
+      // så den trygt kan stå inni HTML-attributtet uten å bryte det.
       const jn = JSON.stringify(navn).replace(/"/g, '&quot;');
       return `
       <div class="modal-list-item" onclick="lastListe(${jn});lukkModal()">
@@ -837,6 +954,8 @@ function renderListerModal() {
 }
 
 // ===================== Layout (drag) =====================
+// Plasserer hvert widget-kort i riktig kolonne for aktiv side, og skjuler dem som
+// står i widget_hidden. Kjøres ved sidebytte, drag-slipp og widget-endringer.
 function applyLayout() {
   // Forsikre at de faste (singleton) widgetene finnes (for gamle lagrede states).
   // notat/bilde utelates med vilje — de er flerinstans og eies per side, så de skal
@@ -869,6 +988,8 @@ function applyLayout() {
   });
 }
 
+// Bygger innholdet i ⊞ Widgets-nedtrekket: av/på-avkrysning for enkeltinstans-
+// widgets, og «+»-knapper for å legge til flere notat-/bilde-kort (med antall vist).
 function renderWidgetMeny() {
   const dropdown = document.getElementById('widget-dropdown');
   const skjult = aktivSide().widget_hidden ?? [];
@@ -896,6 +1017,9 @@ function renderWidgetMeny() {
   dropdown.innerHTML = statiske + leggTil;
 }
 
+// Skrur en widget av/på for aktiv side ved å legge id-en til eller fjerne den fra
+// widget_hidden. Posisjonen i widget_layout beholdes, så kortet kommer tilbake der
+// det var når det slås på igjen.
 function toggleWidgetSynlighet(id, synlig) {
   const skjult = aktivSide().widget_hidden ?? [];
   aktivSide().widget_hidden = synlig
@@ -955,12 +1079,17 @@ function byggKolonner() {
   settOppResizers();
 }
 
+// Kobler mousedown på hvert kolonne-håndtak til startResize (kjøres etter byggKolonner).
 function settOppResizers() {
   document.querySelectorAll('.kl-col-resizer').forEach(r => {
     r.onmousedown = e => startResize(e, r);
   });
 }
 
+// Drar grensen mellom to nabokolonner. Vi jobber i flex-vekter (ikke piksler): de
+// to kolonnene deler en fast sum av vekt, og vi flytter vekt mellom dem etter hvor
+// langt musa dras — med en minstebredde (MIN_KOL_PX) så ingen kolonne kollapser.
+// onMove kjører mens musa holdes nede; onUp rydder opp og lagrer de nye breddene.
 function startResize(e, resizer) {
   e.preventDefault();
   const venstreCol = Number(resizer.dataset.venstre);
@@ -997,6 +1126,9 @@ function startResize(e, resizer) {
   document.addEventListener('mouseup', onUp);
 }
 
+// Øker eller minker antall kolonner på aktiv side med `delta` (±1), klampet til
+// [MIN_KOL, MAKS_KOL]. Ved færre kolonner flyttes kort fra fjernede kolonner inn
+// i den siste gjenværende, så ingen widget blir hjemløs.
 function endreKolonneAntall(delta) {
   const side = aktivSide();
   const n  = side.kolonner ?? 3;
@@ -1018,6 +1150,7 @@ function endreKolonneAntall(delta) {
   oppdaterKolonneStepper();
 }
 
+// Oppdaterer kolonne-tellerens visning og deaktiverer +/− når man er på grensen.
 function oppdaterKolonneStepper() {
   const n = aktivSide().kolonner ?? 3;
   const tall = document.getElementById('kol-antall');
@@ -1028,6 +1161,8 @@ function oppdaterKolonneStepper() {
   if (pluss) pluss.disabled = n >= MAKS_KOL;
 }
 
+// Finner hvilket kolonnenummer musas x-posisjon er over (brukes under drag-slipp).
+// Returnerer første kolonne der musa er til venstre for kolonnens høyre kant.
 function kolonneFraMus(clientX) {
   const wrappers = document.querySelectorAll('.col-wrapper');
   for (const w of wrappers) {
@@ -1037,6 +1172,9 @@ function kolonneFraMus(clientX) {
   return aktivSide().kolonner ?? 3;
 }
 
+// Regner ut hvilken indeks i widget_layout et kort som slippes skal settes inn på,
+// ut fra musas y-posisjon i målkolonnen: vi setter inn foran det første kortet som
+// musa er over øvre halvdel av. Kortet som dras (dragId) hoppes over.
 function posisjonFraMus(clientY, dragId, nyKolonne) {
   let insertAt = aktivSide().widget_layout.length;
   for (let i = 0; i < aktivSide().widget_layout.length; i++) {
@@ -1050,6 +1188,11 @@ function posisjonFraMus(clientY, dragId, nyKolonne) {
   return insertAt;
 }
 
+// Setter opp dra-og-slipp for å flytte widget-kort mellom kolonner. Kort er bare
+// draggable mens man holder i drag-håndtaket (⠿) — ellers ville tekstmarkering og
+// klikk inni kortene starte en dragging. Under dragover vises en innsettings-
+// indikator; ved drop oppdateres widget_layout og layouten tegnes på nytt.
+// Kalles på nytt hver gang nye kort opprettes, så de også blir dragbare.
 function settOppDragOgDrop() {
   const main = document.querySelector('main');
   let dragId = null;
@@ -1114,6 +1257,9 @@ function settOppDragOgDrop() {
     const entry = { ...aktivSide().widget_layout[gammelIndeks] };
     entry.col = nyKolonne;
 
+    // Fjern kortet fra sin gamle plass, sett det inn på den nye. Når vi flytter
+    // framover i lista forskyver fjerningen alle senere indekser ett hakk ned,
+    // så vi justerer målindeksen tilsvarende.
     aktivSide().widget_layout.splice(gammelIndeks, 1);
     if (nyIndeks > gammelIndeks) nyIndeks--;
     aktivSide().widget_layout.splice(nyIndeks, 0, entry);
@@ -1153,6 +1299,8 @@ function håndterSideKlikk(idx) {
   }
 }
 
+// Tegner fane-raden for sidene: én knapp per side (aktiv side markert), en ✕ for å
+// slette (vises kun når det finnes mer enn én side), og en «+» for å legge til side.
 function renderSiderNav() {
   const nav = document.getElementById('sider-nav');
   if (!nav) return;
@@ -1213,6 +1361,8 @@ function startSideRename(idx) {
   input.addEventListener('blur', () => avslutt(true));
 }
 
+// Bytter til side `idx`: setter aktiv side, bygger kolonnene på nytt og re-rendrer
+// ALT per-side-innhold for den nye siden. Timeren røres ikke — den er global.
 function byttSide(idx) {
   state.aktiv_side = idx;
   saveState();
@@ -1229,6 +1379,9 @@ function byttSide(idx) {
   oppdaterKolonneStepper();
 }
 
+// Oppretter en ny, tom side og bytter til den. Den får egne notat- og bilde-
+// instanser (ellers ville den delt innhold med side 1), og starter med alle widgets
+// skjult — læreren henter fram det hun trenger via ⊞ Widgets.
 function leggTilSide() {
   const nr = state.sider.length + 1;
   const side = nySide(`Side ${nr}`);
@@ -1258,6 +1411,8 @@ function leggTilSide() {
   byttSide(state.sider.length - 1);
 }
 
+// Sletter en side. Siste side kan ikke slettes (det må alltid finnes minst én).
+// Etterpå byttes det til en gyldig nabo-side, som re-rendrer alt.
 function fjernSide(idx) {
   if (state.sider.length <= 1) return;
   state.sider.splice(idx, 1);
@@ -1266,9 +1421,13 @@ function fjernSide(idx) {
 }
 
 // ===================== Reset =====================
+// Hver nullstill*-funksjon tømmer ett enkelt trekk/widget på aktiv side: tøm
+// valgt + backlog, lagre, tegn på nytt og varsle. Brukes fra Nullstill-modalen.
 function nullstillTilfeldig()   { const s = aktivSide(); s.tilfeldig_valgt = null; s.tilfeldig_backlog = []; saveState(); renderTilfeldig(); notify('🎲 Tilfeldig-trekk nullstilt'); }
 function nullstillOrdenselev()  { const s = aktivSide(); s.ordenselev_valgte = []; s.ordenselev_backlog = []; saveState(); renderOrdenselev(); notify('⭐ Ordenselever-trekk nullstilt'); }
 function nullstillUlv()         { const s = aktivSide(); s.ulv_valgt = null; s.ulv_backlog = []; saveState(); renderUlv(); notify('🐺 Ulv-trekk nullstilt'); }
+// Tømmer teksten i ALLE notat-kort (ikke bare aktiv side, siden notater er globale).
+// Må også nullstille de synlige tekstfeltene + krympe dem, ikke bare state.
 function nullstillNotat() {
   for (const instansId of Object.keys(state.notater)) {
     state.notater[instansId].tekst = '';
@@ -1281,6 +1440,10 @@ function nullstillNotat() {
 function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); renderDagsplan(); notify('📋 Dagsplan nullstilt'); }
 
 // ===================== Info modal =====================
+// Ferdig HTML som vises i info-modalen via åpneInfoModal(). Disse to strengene er
+// «innholdet» bak Klasserom-menyens to lenker. NB (se CLAUDE.md): når en brukersynlig
+// funksjon endres, skal OPPDATERINGSLOGG_HTML og BRUKERVEILEDNING_HTML oppdateres i
+// samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
     <div class="logg-versjon">v2.11</div>
@@ -1475,6 +1638,7 @@ const OPPDATERINGSLOGG_HTML = `
     </ul>
   </div>`;
 
+// Brukerveiledningen som vises i info-modalen (se note over OPPDATERINGSLOGG_HTML).
 const BRUKERVEILEDNING_HTML = `
   <h4>Sider — ett arbeidsbord per klasse</h4>
   <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side, klikk på et sidenavn for å bytte, og <strong>✕</strong> på en fane for å slette. Tanken er at <strong>hver side er sin egen klasse</strong>: lag side 1 for 1A og side 2 for 1B, og bytt fritt mellom dem gjennom dagen uten at noe blandes.</p>
@@ -1574,12 +1738,14 @@ const BRUKERVEILEDNING_HTML = `
   <p>For å hente data tilbake — eller flytte alt til en annen maskin eller nettleser — velg <strong>📥 Importer data</strong> og pek på fila. Du får velge mellom <strong>«Erstatt alt»</strong> (full gjenoppretting som overskriver det som ligger der nå) og <strong>«Slå sammen kun klasselister»</strong> (behold alt ditt, men hent inn de lagrede listene fra fila — fint for å dele klasselister mellom lærere).</p>
   <p>Når du har laget nye lister eller endret en backlog siden forrige eksport, dukker det opp et lite <strong>«● Ueksporterte endringer»</strong>-merke øverst. Klikk på det for å ta en ny backup. Tips: eksporter med jevne mellomrom, så er du trygg om nettleserdata skulle bli tømt.</p>`;
 
+// Åpner info-overlayet med gitt tittel og ferdig HTML-innhold (logg eller guide).
 function åpneInfoModal(tittel, innholdHtml) {
   document.getElementById('info-modal-tittel').textContent = tittel;
   document.getElementById('info-modal-innhold').innerHTML = innholdHtml;
   document.getElementById('info-overlay').classList.remove('hidden');
 }
 
+// Lukker info-overlayet.
 function lukkInfoModal() {
   document.getElementById('info-overlay').classList.add('hidden');
 }
@@ -1587,6 +1753,9 @@ function lukkInfoModal() {
 // ===================== Modals =====================
 let aktivModal = null;
 
+// Åpner modalen med gitt id: vis overlayet, skjul alle modaler og vis kun den ene.
+// Husker hvilken som er åpen i `aktivModal` (brukes av Esc-tasten). Fokuserer et
+// eventuelt input-felt etter en liten forsinkelse, så feltet er klart til å skrive i.
 function åpneModal(id) {
   document.getElementById('modal-overlay').classList.remove('hidden');
   document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
@@ -1596,11 +1765,14 @@ function åpneModal(id) {
   if (input) setTimeout(() => input.focus(), 60);
 }
 
+// Lukker den åpne modalen og nullstiller aktivModal.
 function lukkModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
   aktivModal = null;
 }
 
+// Bygger og åpner «Fjern elever»-modalen: en «Tøm alle»-avkrysning øverst, så én
+// avkrysning per elev. data-idx kobler hver avkrysning til elevens listeindeks.
 function åpneFjernElevModal() {
   const liste = document.getElementById('fjern-elever-liste');
   liste.innerHTML = `
@@ -1617,6 +1789,8 @@ function åpneFjernElevModal() {
 }
 
 // ===================== Notifications =====================
+// Viser en liten «toast»-melding nede i hjørnet som fjerner seg selv etter 3,2 sek.
+// `type` (success/warning/error) styrer fargen via CSS-klassen.
 function notify(melding, type = 'success') {
   const container = document.getElementById('notif-container');
   const el = document.createElement('div');
@@ -1627,6 +1801,9 @@ function notify(melding, type = 'success') {
 }
 
 // ===================== Utils =====================
+// Escaper HTML-spesialtegn i brukerinnhold (elevnavn osv.) før det settes inn via
+// innerHTML. Hindrer at f.eks. et navn med < eller " bryter markupen / injiserer HTML.
+// & må escapes først, ellers ville den doble-escape de andre erstatningene.
 function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -1635,6 +1812,7 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
+// Snarvei for modal-input: Enter kjører bekreft-funksjonen, Esc lukker modalen.
 function inputEnter(inputId, bekreftFn) {
   document.getElementById(inputId).addEventListener('keydown', e => {
     if (e.key === 'Enter')  bekreftFn();
@@ -1643,6 +1821,8 @@ function inputEnter(inputId, bekreftFn) {
 }
 
 // ===================== Tema =====================
+// Bytter fargetema. Selve fargene ligger i CSS, knyttet til data-theme på <html>;
+// her setter vi bare attributtet, lagrer valget og markerer det aktive valget i menyen.
 function settTema(tema) {
   state.tema = tema;
   document.documentElement.setAttribute('data-theme', tema);
@@ -1653,6 +1833,8 @@ function settTema(tema) {
 }
 
 // ===================== Font =====================
+// Tilgjengelige fonter. `css` er font-family-verdien som settes; `url` peker på et
+// Google Fonts-stilark som lastes inn ved behov (system-fonten trenger ingen, url=null).
 const FONTER = {
   'system':      { css: 'system-ui,-apple-system,"Segoe UI",sans-serif', url: null },
   'victor-mono': { css: '"Victor Mono",monospace', url: 'https://fonts.googleapis.com/css2?family=Victor+Mono:ital,wght@0,400;0,700;1,400&display=swap' },
@@ -1663,6 +1845,9 @@ const FONTER = {
   'caveat':      { css: '"Caveat",cursive', url: 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap' },
 };
 
+// Bytter skrifttype. Webfonter lastes først ved behov: vi injiserer <link>-en bare
+// hvis fonten har en url og ikke alt er lastet (data-font hindrer dobbeltlasting).
+// Selve fonten brukes via CSS-variabelen --font.
 function settFont(fontKey) {
   const f = FONTER[fontKey] ?? FONTER['system'];
   if (f.url && !document.querySelector(`link[data-font="${fontKey}"]`)) {
@@ -1687,6 +1872,8 @@ const STØRRELSER = {
   'xl':     '20px',
 };
 
+// Setter global skriftstørrelse ved å endre rot-størrelsen (--font-size). Siden alt
+// måles i rem skalerer hele grensesnittet proporsjonalt med dette ene tallet.
 function settSkriftstørrelse(key) {
   const px = STØRRELSER[key] ?? STØRRELSER['normal'];
   document.documentElement.style.setProperty('--font-size', px);
@@ -1697,6 +1884,8 @@ function settSkriftstørrelse(key) {
   });
 }
 
+// Setter skriftstørrelse for ETT enkelt widget-kort, oppå den globale størrelsen.
+// «normal» betyr «følg det globale» og lagres derfor ikke (slettes fra state).
 function settWidgetSkriftstørrelse(widgetId, key) {
   const card = document.getElementById(widgetId);
   if (!card) return;
@@ -1716,12 +1905,16 @@ function settWidgetSkriftstørrelse(widgetId, key) {
   });
 }
 
+// Gjenoppretter alle lagrede per-widget-størrelser ved oppstart.
 function applyWidgetStørrelser() {
   const map = state.widget_størrelser ?? {};
   Object.entries(map).forEach(([id, key]) => settWidgetSkriftstørrelse(id, key));
 }
 
 // ===================== Event setup =====================
+// Kobler alle klikk-, tastatur- og overlay-hendelser i grensesnittet til funksjonene
+// sine. Kjøres én gang ved oppstart (fra init). Delene under er gruppert per widget/
+// meny med egne kommentarer. Hver «bekreft»-funksjon valideres før modalen lukkes.
 function settOppHendelser() {
   // Legg til elev
   document.getElementById('btn-legg-til').onclick = () => {
@@ -1962,9 +2155,12 @@ function settOppHendelser() {
       if (e.key === 'Escape') lukkModal();
       return;
     }
+    // Ikke utløs hurtigtaster mens man skriver i et tekstfelt — da skal «a», «r» osv.
+    // bli vanlige bokstaver, ikke kommandoer.
     const tag = document.activeElement?.tagName;
     if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
+    // Enkelt-tast → handling (uten modifikatorer). Speiler knappene i grensesnittet.
     switch (e.key) {
       case 'a': document.getElementById('btn-legg-til').click();        break;
       case 'r': trekkTilfeldig();                                        break;
@@ -1984,6 +2180,8 @@ function settOppHendelser() {
 
 // ===================== Init =====================
 // ===================== Rename Klassebamse =====================
+// Kobler opp «gi nytt navn til klassebamsen»-modalen (egen funksjon fordi den ble
+// lagt til etter settOppHendelser). Lagrer det nye navnet på aktiv side.
 function settOppRename() {
   document.getElementById('btn-ulv-rename').onclick = () => {
     document.getElementById('rename-input').value = aktivSide().ulv_navn || 'Klassebamse';
@@ -2003,6 +2201,9 @@ function settOppRename() {
 }
 
 // ===================== Backlog-editor =====================
+// Åpner backlog-editoren for ordenselev eller ulv (`type` velger hvilken). Viser én
+// «chip» per elev; klikk på en chip legger eleven til / fjerner den fra backlogen
+// manuelt — nyttig for å rette opp hvis noen var syk e.l. Re-rendrer trekket fortløpende.
 function åpneRedigerBacklog(type) {
   const s = aktivSide();
   const erOrden   = type === 'ordenselev';
@@ -2036,8 +2237,12 @@ function åpneRedigerBacklog(type) {
 }
 
 // ===================== Bilde-widget =====================
+// Hvilket bilde-kort som sist ble klikket. Brukes av lim-inn (Ctrl+V): innliming
+// uten et tydelig «mål» går til det sist fokuserte bildekortet.
 let fokusertBildeId = null;
 
+// Bygger DOM-en for ett bilde-kort (flerinstans, som notat). Inneholder opplastings-
+// flate, <img> for visning og en fjern-knapp — alle skjult/vist av renderBilde.
 function lagBildeElement(instansId) {
   const div = document.createElement('div');
   div.className = 'card';
@@ -2062,6 +2267,8 @@ function lagBildeElement(instansId) {
   return div;
 }
 
+// Kobler et bilde-kort: klikk på kortet gjør det til «fokusert» (lim-inn-mål), og
+// vi tegner gjeldende tilstand (tomt eller med bilde).
 function setupBilde(instansId) {
   document.getElementById(`card-${instansId}`)?.addEventListener('click', () => {
     fokusertBildeId = instansId;
@@ -2069,6 +2276,8 @@ function setupBilde(instansId) {
   renderBilde(instansId);
 }
 
+// Veksler bilde-kortet mellom to tilstander: har vi lagrede bildedata viser vi bildet
+// + fjern-knappen; ellers viser vi opplastingsflaten.
 function renderBilde(instansId) {
   const img    = document.getElementById(`bilde-img-${instansId}`);
   const label  = document.getElementById(`bilde-label-${instansId}`);
@@ -2087,11 +2296,15 @@ function renderBilde(instansId) {
   }
 }
 
+// Tar imot en fil valgt via fil-velgeren og sender den videre til lesBildefil.
 function lastOppBilde(input, instansId) {
   const fil = input.files?.[0];
   if (fil) lesBildefil(fil, instansId);
 }
 
+// Leser en bildefil og lagrer den som en data-URL (base64) i state. Vi lagrer i
+// localStorage som har ~5 MB tak, derfor grensa på 2 MB her — og data-URL-en blir
+// ~33 % større enn fila. FileReader er asynkron: lagring skjer i onload-callbacken.
 function lesBildefil(fil, instansId) {
   if (fil.size > 2 * 1024 * 1024) {
     notify('Bildet er for stort — maks 2 MB', 'warning');
@@ -2106,12 +2319,15 @@ function lesBildefil(fil, instansId) {
   reader.readAsDataURL(fil);
 }
 
+// Tømmer bildet fra et kort (men beholder selve kortet — klar for et nytt bilde).
 function fjernBildeData(instansId) {
   state.bilder[instansId].data = null;
   saveState();
   renderBilde(instansId);
 }
 
+// Fjerner hele bilde-kortet fra denne siden. Bildedataene slettes kun hvis ingen
+// andre sider bruker kortet (samme mønster som fjernNotat).
 function fjernBildeWidget(instansId) {
   const cardId = `card-${instansId}`;
   const side = aktivSide();
@@ -2126,6 +2342,8 @@ function fjernBildeWidget(instansId) {
   saveState();
 }
 
+// Oppretter et nytt, tomt bilde-kort på aktiv side (speiler leggTilNotat). Plasseres
+// i kolonne 3 hvis den finnes, ellers i siste kolonne på smalere sider.
 function leggTilBilde() {
   state.bilde_teller++;
   const id = `bilde-${state.bilde_teller}`;
@@ -2143,6 +2361,8 @@ function leggTilBilde() {
 }
 
 // ===================== Gruppebegrensning =====================
+// Legger til et «hold fra hverandre»-par på aktiv side, som lagGrupper respekterer.
+// Hopper over tomt/likt par og duplikater (par er retningsløse: A+B == B+A).
 function leggTilBegrensning(navn1, navn2) {
   if (!navn1 || !navn2 || navn1 === navn2) return;
   const s = aktivSide();
@@ -2155,12 +2375,14 @@ function leggTilBegrensning(navn1, navn2) {
   renderBegrensninger();
 }
 
+// Fjerner et begrensnings-par ved indeks.
 function fjernBegrensning(idx) {
   aktivSide().gruppe_begrensninger.splice(idx, 1);
   saveState();
   renderBegrensninger();
 }
 
+// Tegner lista over begrensnings-par («A + B») med en slett-knapp per par.
 function renderBegrensninger() {
   const liste = document.getElementById('begrensning-liste');
   if (!liste) return;
@@ -2176,11 +2398,14 @@ function renderBegrensninger() {
   });
 }
 
+// Åpner begrensnings-modalen og tegner gjeldende par.
 function åpneBegrensningModal() {
   document.getElementById('begrensning-modal').style.display = 'flex';
   renderBegrensninger();
 }
 
+// Fyller de to nedtrekkslistene i begrensnings-modalen med dagens elever, og prøver
+// å beholde det allerede valgte navnet hvis eleven fortsatt er inne.
 function oppdaterBegrensningSelecter() {
   ['begr-navn1', 'begr-navn2'].forEach(id => {
     const sel = document.getElementById(id);
@@ -2213,6 +2438,8 @@ function beregnEksportSignatur(s = state) {
   });
 }
 
+// Viser/skjuler «du har ulagrede endringer»-varselet. Vises kun når det finnes data
+// verdt å sikre (lister eller backlogs) OG signaturen avviker fra siste eksport.
 function oppdaterEksportVarsel() {
   const el = document.getElementById('eksport-varsel');
   if (!el) return;
@@ -2223,6 +2450,10 @@ function oppdaterEksportVarsel() {
   el.classList.toggle('hidden', !(harData && endret));
 }
 
+// Skriver hele tilstanden til en JSON-fil og laster den ned som backup. Vi pakker
+// en versjon + app-navn rundt innholdet så import kan kjenne igjen og validere fila.
+// Trikset for nedlasting: lag en Blob, lag en midlertidig <a download>, klikk den
+// programmatisk, og rydd opp. Etterpå markeres dataene som «eksportert».
 function eksporterData() {
   const nå = new Date();
   const data = {
@@ -2268,6 +2499,9 @@ function eksporterData() {
 
 let ventendeImport = null; // parsed fil mellom valg av fil og bekreftelse av modus
 
+// Steg 1 av import: les og valider den valgte fila. Selve sammenslåingen skjer ikke
+// her — vi parser, sjekker at det faktisk er en klasserom-backup, fyller infoteksten
+// og åpner import-modalen der brukeren velger modus. Resultatet venter i ventendeImport.
 function håndterImportFil(input) {
   const fil = input.files?.[0];
   input.value = ''; // tillat å velge samme fil igjen senere
@@ -2299,6 +2533,10 @@ function håndterImportFil(input) {
   reader.readAsText(fil);
 }
 
+// Steg 2 av import: utfør den etter at brukeren har valgt modus.
+//  - «flett_lister»: behold alt nåværende, bare legg til/oppdater lagrede lister.
+//  - «erstatt»: bygg en helt ny tilstand fra fila (tolerant — manglende felt får
+//    dagens defaults), skriv den rett til localStorage og last siden på nytt.
 function bekreftImport() {
   const data  = ventendeImport;
   if (!data) { lukkModal(); return; }
@@ -2343,6 +2581,9 @@ function bekreftImport() {
   location.reload(); // enkleste, sikreste vei til full re-render fra ny tilstand
 }
 
+// Appens oppstart (kjøres når DOM-en er klar, se nederst i fila). Tegner all data fra
+// lagret tilstand, oppretter DOM for flerinstans-widgets (notat/bilde), kobler opp
+// hendelser og dra-og-slipp, og setter i gang dato-/vær-oppdatering på timer.
 function init() {
   oppdaterDato();
   hentVær();
@@ -2368,6 +2609,8 @@ function init() {
     setupBilde(instansId);
   }
 
+  // Lim inn bilde (Ctrl+V): går til det sist fokuserte bildekortet. Vi leter gjennom
+  // utklippstavlas elementer etter det første som er en bildefil.
   document.addEventListener('paste', e => {
     if (!fokusertBildeId) return;
     const items = e.clipboardData?.items;
@@ -2394,4 +2637,5 @@ function init() {
   oppdaterEksportVarsel();
 }
 
+// Start appen når DOM-en er ferdig parset (skriptet ligger i <head> uten defer).
 document.addEventListener('DOMContentLoaded', init);

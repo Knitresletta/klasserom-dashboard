@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Klasserom-dashboard</title>
+  <!-- Favicon uten egen fil: en inline SVG (data-URI) som bare tegner 🏫-emojien. -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%AB%3C/text%3E%3C/svg%3E">
   <meta name="description" content="Klasseromsdashboard for læreren — navnetrekking, grupper, timer og dagsplan i ett oversiktlig dashboard. Alt lagres lokalt i nettleseren.">
   <!-- Open Graph / sosiale medier -->
@@ -21,8 +22,20 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!--
+  Sidestruktur:
+   <header>  — tittel/meny, fane-rad for sider, dato, vær og ⊞ Widgets-menyen
+   <main>    — tre (eller flere) .col-wrapper-kolonner som JS fyller med widget-kort,
+               etterfulgt av selve kort-malene (app.js flytter dem inn i kolonnene)
+   #action-bar — bunnlinje med Nullstill, Tavle, kolonneteller og hurtigtast-hint
+   #modal-overlay + frittstående modaler — dialoger (se MODALS-seksjonen)
+  All logikk ligger i app.js (lastes nederst). Tekst styres via data-attributter.
+-->
 
 <header>
+  <!-- Klasserom-menyen: klikk på tittelen åpner nedtrekket. Valgene med .kl-has-submenu
+       folder ut en undermeny (tema/font/størrelse). data-tema/-font/-størrelse leses av
+       app.js for å vite hvilket valg som ble klikket. -->
   <div id="klasserom-meny-wrapper">
     <h1 id="btn-klasserom-meny" title="Meny">🏫 Klasserom</h1>
     <div id="klasserom-dropdown" class="hidden">
@@ -144,8 +157,9 @@
       </div>
     </div>
   </div>
-  <div id="sider-nav" class="sider-nav"></div>
-  <div id="header-dato"></div>
+  <div id="sider-nav" class="sider-nav"></div> <!-- fane-rad, fylles av renderSiderNav() -->
+  <div id="header-dato"></div>                 <!-- dagens dato, settes av oppdaterDato() -->
+  <!-- Vises kun når det finnes ulagrede endringer siden siste eksport (oppdaterEksportVarsel) -->
   <button id="eksport-varsel" class="hidden" title="Du har endringer siden siste eksport — klikk for å eksportere nå">● Ueksporterte endringer</button>
   <div id="widget-meny-wrapper">
     <div id="vær-wrapper">
@@ -158,9 +172,14 @@
 </header>
 
 <main>
+  <!-- Kolonnene kortene plasseres i. Tomme her — applyLayout() flytter kort-malene
+       under inn i riktig kolonne per side. byggKolonner() kan legge til/fjerne flere. -->
   <div class="col-wrapper" data-col="1"></div>
   <div class="col-wrapper" data-col="2"></div>
   <div class="col-wrapper" data-col="3"></div>
+  <!-- Widget-kortene under er maler som ligger fast i markupen. JS skjuler/viser og
+       flytter dem mellom kolonnene; hvert kort har en ✕ (skjul), et drag-håndtak (⠿)
+       og en stabil id (card-*) som layout og widget-meny refererer til. -->
   <!-- Card: Elever -->
   <div class="card" id="card-elever">
     <button class="kl-widget-close" onclick="toggleWidgetSynlighet('card-elever', false)" title="Fjern fra siden">✕</button>
@@ -258,7 +277,8 @@
     </div>
   </div>
 
-  <!-- Card: Notat -->
+  <!-- Card: Notat — har INGEN statisk mal her. Notat- og bilde-kort er flerinstans
+       og bygges i sin helhet av JS (lagNotatElement/lagBildeElement), én per instans. -->
   <!-- Card: Dagsplan -->
   <div class="card" id="card-dagsplan">
     <button class="kl-widget-close" onclick="toggleWidgetSynlighet('card-dagsplan', false)" title="Fjern fra siden">✕</button>
@@ -296,6 +316,9 @@
 </div>
 
 <!-- ============ MODALS ============ -->
+<!-- De fleste dialogene bor inne i dette felles overlayet og styres av åpneModal()/
+     lukkModal() (som viser/skjuler via .hidden). To dialoger lenger ned (begrensning-
+     og feedback-modal) er frittstående og toggles i stedet via inline style.display. -->
 <div id="modal-overlay" class="modal-overlay hidden">
 
   <div id="modal-legg-til" class="modal hidden">
@@ -441,7 +464,8 @@
   </div>
 </div>
 
-<!-- Begrensning-modal -->
+<!-- Begrensning-modal: frittstående overlay (ikke del av #modal-overlay). Lar læreren
+     velge to elever som ikke skal havne i samme gruppe. Knappene bruker inline onclick. -->
 <div id="begrensning-modal" class="modal-overlay" style="display:none">
   <div class="modal-boks">
     <h3>⛔ Par som ikke kan være i samme gruppe</h3>
@@ -455,7 +479,8 @@
   </div>
 </div>
 
-<!-- Feedback-modal -->
+<!-- Feedback-modal: frittstående overlay med kontaktvalg (e-post + GitHub-issue).
+     Ren statisk markup — ingen skjemainnsending; lenkene gjør jobben. -->
 <div id="feedback-modal" class="modal-overlay" style="display:none">
   <div class="modal-boks">
     <h3>💬 Tilbakemelding & kontakt</h3>
@@ -476,6 +501,7 @@
   </div>
 </div>
 
+<!-- All logikk og oppstart ligger her (init kjøres på DOMContentLoaded). -->
 <script src="app.js"></script>
 </body>
 </html>

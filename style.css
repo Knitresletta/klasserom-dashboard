@@ -1,4 +1,20 @@
+/*
+  style.css — all styling for klasserom-dashboardet. Grov inndeling nedover:
+    1. Custom properties (:root)  — farger, skygger, radius, font som variabler
+    2. Temaer ([data-theme="…"]) — hvert tema overstyrer DE SAMME variablene
+    3. Reset + grunnoppsett
+    4. Header, meny og undermenyer
+    5. Hovedlayout (kolonner) + kort + dra-håndtak
+    6. Knapper + utility-klasser
+    7. Widget-spesifikk stil (elever, trekk, timer, notat, dagsplan, grupper, bilde)
+    8. Modaler, varsler, tavlemodus, info-modal
+    9. Animasjoner og responsiv tilpasning
+  Fargene refereres alltid via var(--…), så et temabytte = bytte av variabler på <html>.
+*/
+
 /* ===================== Custom properties ===================== */
+/* Standardtemaet (lyst). Alle andre temaer arver herfra og overstyrer kun det de
+   trenger. JS endrer aldri fargene direkte — kun data-theme-attributtet på <html>. */
 :root {
   --bg:           #eef2ff;
   --card:         #ffffff;
@@ -25,6 +41,9 @@
 }
 
 /* ===================== Temaer ===================== */
+/* Hvert tema er bare et nytt sett verdier for de samme variablene (+ av og til en
+   egen header-bakgrunn). Settes via data-theme på <html> fra settTema(). Vil du lage
+   et nytt tema: kopier en blokk, gi den et nytt data-theme-navn og juster fargene. */
 [data-theme="mørkt"] {
   --bg:        #0f172a;
   --card:      #1e293b;
@@ -217,6 +236,8 @@
 [data-theme="equestria"] header { background: linear-gradient(135deg, #ec4899 0%, #a855f7 33%, #3b82f6 66%, #22c55e 100%); border-bottom: 1px solid #f9a8d4; }
 
 /* ===================== Reset ===================== */
+/* Nullstill nettleserens standard-marger/padding og bruk border-box overalt, så
+   bredde/høyde inkluderer padding og kanter (gjør layouten forutsigbar). */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: var(--font);
@@ -241,6 +262,8 @@ header {
   position: relative;
 }
 header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; cursor: pointer; }
+/* Fane-raden sentreres midt i headeren uavhengig av tittel/meny til venstre:
+   plasser ved 50 % og dra halve egen bredde tilbake med translateX(-50%). */
 .sider-nav {
   display: flex;
   align-items: center;
@@ -390,6 +413,9 @@ header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; white-
 textarea[id^="notat-textarea"].kursiv { font-style: italic; }
 
 /* ===================== Main layout ===================== */
+/* Hovedområdet er en vannrett flex-rad av kolonner (.col-wrapper). Hver kolonne
+   stabler kortene sine loddrett. align-items: flex-start gjør at kolonnene starter
+   øverst i stedet for å strekkes like høye. */
 main {
   display: flex;
   flex-direction: row;
@@ -497,6 +523,8 @@ body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary
 .card:hover .card-controls { opacity: 1; }
 
 /* ===================== Drag handle ===================== */
+/* ⠿-håndtaket (og kort-kontrollene over) ligger skjult med opacity: 0 og tones inn
+   når man holder musa over kortet — samme «vis ved hover»-mønster brukes flere steder. */
 .drag-handle {
   cursor: grab;
   color: var(--border);
@@ -653,6 +681,8 @@ body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary
   height: 7px;
   overflow: hidden;
 }
+/* Framdriftsbjelken. JS setter width i prosent hvert sekund; width-transition gjør at
+   den glir jevnt nedover i stedet for å hoppe. Fargen byttes når den kjører/er ferdig. */
 #timer-bar {
   height: 100%;
   border-radius: 999px;
@@ -668,6 +698,9 @@ body.kl-resizing .kl-col-resizer::before { opacity: 1; background: var(--primary
 .timer-controls { display: flex; gap: 8px; }
 
 /* ===================== Notes ===================== */
+/* Attributt-velgeren [id^="notat-textarea"] treffer ALLE notat-felt, også de JS lager
+   senere (id-ene starter likt). overflow: hidden + height: auto er det som gjør at
+   autoResizeNotat() kan la feltet vokse med teksten i stedet for å få indre scroll. */
 textarea[id^="notat-textarea"] {
   width: 100%;
   resize: none;
@@ -818,6 +851,8 @@ main.drag-active::before {
   pointer-events: none;
   z-index: 50;
 }
+/* Den blå streken som viser hvor et kort vil havne ved slipp. Negativ margin trekker
+   den inn i gapet mellom kort så den ikke dytter de andre kortene fra hverandre. */
 .drop-indikator {
   height: 3px;
   background: var(--primary);
@@ -1055,6 +1090,8 @@ main.drag-active::before {
 .logg-entry ul { margin: 4px 0; }
 
 /* ===================== Animations ===================== */
+/* Korte inn-animasjoner: fade-in for overlay-bakgrunn, modal-in for dialoger/popups
+   (lett zoom + glid ned), notif-in for toast-varsler (glir inn fra høyre). */
 @keyframes fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -1176,20 +1213,24 @@ main.drag-active::before {
 .import-modus span strong { color: var(--text); }
 
 /* ===================== Responsive ===================== */
+/* Tilpasninger for smale skjermer. MERK: grid-template-columns / grid-column under har
+   ingen effekt — `main` er display: flex, ikke grid (se Main layout). De er trolig
+   rester fra et tidligere grid-basert oppsett. Det som faktisk virker her er å skjule
+   dra-håndtak/resizere og hint på liten skjerm. Kolonnene smalner uansett via flex. */
 @media (max-width: 960px) {
   main {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr; /* uvirksom på flex-container (se note over) */
   }
-  /* Nullstill bruker-definert layout på liten skjerm */
+  /* Skjul dra-håndtak og kolonne-resizere — finmotorisk dra-og-slipp passer dårlig på touch. */
   main > .card {
-    grid-column: auto !important;
+    grid-column: auto !important; /* uvirksom på flex-container (se note over) */
   }
   .drag-handle, .kl-col-resizer { display: none; }
   textarea[id^="notat-textarea"] { min-height: 70px; }
-  .shortcut-hint { display: none; }
+  .shortcut-hint { display: none; } /* hurtigtast-hintet er irrelevant uten tastatur */
 }
 @media (max-width: 620px) {
-  main { grid-template-columns: 1fr; }
+  main { grid-template-columns: 1fr; } /* uvirksom på flex-container (se note over) */
   #action-bar { flex-wrap: wrap; }
   .lagret-hint { display: none; }
 }
