@@ -159,8 +159,6 @@
   </div>
   <div id="sider-nav" class="sider-nav"></div> <!-- fane-rad, fylles av renderSiderNav() -->
   <div id="header-dato"></div>                 <!-- dagens dato, settes av oppdaterDato() -->
-  <!-- Vises kun når det finnes ulagrede endringer siden siste eksport (oppdaterEksportVarsel) -->
-  <button id="eksport-varsel" class="hidden" title="Du har endringer siden siste eksport — klikk for å eksportere nå">● Ueksporterte endringer</button>
   <div id="widget-meny-wrapper">
     <div id="vær-wrapper">
       <div id="header-ver" title="Klikk for detaljer"></div>
@@ -291,6 +289,10 @@
   </div>
 
 </main>
+
+<!-- Vises kun når det finnes ulagrede endringer siden siste eksport (oppdaterEksportVarsel).
+     Ligger rett over action-baren så varselet er der blikket havner når man er ferdig. -->
+<button id="eksport-varsel" class="hidden" title="Du har endringer siden siste eksport — klikk for å eksportere nå">● Ueksporterte endringer</button>
 
 <!-- Action bar -->
 <div id="action-bar">

@@ -1446,6 +1446,13 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.12</div>
+    <div class="logg-dato">2. juni 2026</div>
+    <ul>
+      <li>Varselet <strong>«● Ueksporterte endringer»</strong> ligger nå nederst, rett over hurtigtast-baren — der blikket havner når du er ferdig for dagen — i stedet for oppe i toppen</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.11</div>
     <div class="logg-dato">30. mai 2026</div>
     <ul>
@@ -1466,7 +1473,7 @@ const OPPDATERINGSLOGG_HTML = `
     <ul>
       <li><strong>📤 Eksporter data</strong> i Klasserom-menyen lagrer alt — klasselister, sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder — til én backup-fil på maskinen din</li>
       <li><strong>📥 Importer data</strong> henter alt tilbake fra en slik fil. Du kan enten erstatte alt, eller bare slå sammen de lagrede klasselistene (nyttig for å dele lister mellom lærere)</li>
-      <li>Et lite varsel <strong>«● Ueksporterte endringer»</strong> dukker opp i headeren når du har laget nye lister eller endret backlog siden forrige eksport. Klikk på det for å ta en ny backup</li>
+      <li>Et lite varsel <strong>«● Ueksporterte endringer»</strong> dukker opp når du har laget nye lister eller endret backlog siden forrige eksport. Klikk på det for å ta en ny backup</li>
     </ul>
   </div>
   <div class="logg-entry">
@@ -1736,7 +1743,7 @@ const BRUKERVEILEDNING_HTML = `
   <h4>📤 Eksportere og 📥 importere data</h4>
   <p>Siden data kun bor i nettleseren din, er det lurt å ta en <strong>backup</strong>. Åpne <strong>Klasserom-menyen</strong> og velg <strong>📤 Eksporter data</strong> — da lastes det ned én fil som inneholder alt: klasselister, alle sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder.</p>
   <p>For å hente data tilbake — eller flytte alt til en annen maskin eller nettleser — velg <strong>📥 Importer data</strong> og pek på fila. Du får velge mellom <strong>«Erstatt alt»</strong> (full gjenoppretting som overskriver det som ligger der nå) og <strong>«Slå sammen kun klasselister»</strong> (behold alt ditt, men hent inn de lagrede listene fra fila — fint for å dele klasselister mellom lærere).</p>
-  <p>Når du har laget nye lister eller endret en backlog siden forrige eksport, dukker det opp et lite <strong>«● Ueksporterte endringer»</strong>-merke øverst. Klikk på det for å ta en ny backup. Tips: eksporter med jevne mellomrom, så er du trygg om nettleserdata skulle bli tømt.</p>`;
+  <p>Når du har laget nye lister eller endret en backlog siden forrige eksport, dukker det opp et lite <strong>«● Ueksporterte endringer»</strong>-merke nederst, rett over hurtigtast-baren. Klikk på det for å ta en ny backup. Tips: eksporter med jevne mellomrom, så er du trygg om nettleserdata skulle bli tømt.</p>`;
 
 // Åpner info-overlayet med gitt tittel og ferdig HTML-innhold (logg eller guide).
 function åpneInfoModal(tittel, innholdHtml) {

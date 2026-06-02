@@ -1178,7 +1178,10 @@ main.drag-active::before {
 }
 .kontakt-lenke:hover { background: var(--primary-l); border-color: var(--primary); }
 
-/* ===================== Eksport-varsel (header) ===================== */
+/* ===================== Eksport-varsel (over action-bar) ===================== */
+/* Egen rad rett over #action-bar. body er flex-kolonne, så align-self sentrerer
+   pillen horisontalt; margin gir luft over hurtigtast-baren. .hidden (display:none)
+   gjør at raden kollapser helt når det ikke finnes ulagrede endringer. */
 #eksport-varsel {
   border: none;
   background: var(--amber);
@@ -1190,6 +1193,8 @@ main.drag-active::before {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  align-self: center;
+  margin: 8px auto 6px;
   transition: filter .12s;
 }
 #eksport-varsel:hover { filter: brightness(1.08); }
