@@ -69,7 +69,7 @@ function defaultState() {
     skrift_størrelse: 'normal',
     widget_størrelser: {},
     notater:      { 'notat-1': { tekst: '', kursiv: false } },
-    bilder:       { 'bilde-1': { data: null } },
+    bilder:       { 'bilde-1': {} }, // register over bildekort; selve bildene bor i IndexedDB
     notat_teller: 1,
     bilde_teller: 1,
     eksport_signatur: null, // signatur av data ved siste eksport (for endrings-varsel)
@@ -1696,6 +1696,16 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.15</div>
+    <div class="logg-dato">8. juni 2026</div>
+    <ul>
+      <li><strong>Mye større bilder:</strong> grensa er hevet fra 2 MB til <strong>50 MB</strong> per bilde. Bilder lagres nå i nettleserens IndexedDB i stedet for det vesle localStorage-lageret — mer plass, og de stjeler ikke lenger plass fra sider, elever og notater</li>
+      <li>Eksisterende bilder flyttes automatisk over til det nye lageret første gang du åpner appen — du trenger ikke gjøre noe</li>
+      <li>Backup-fila (eksporter/importer) virker som før og er kryss-kompatibel med eldre versjoner</li>
+      <li>(Teknisk: åpner du appen som en lokal fil i en Firefox-basert nettleser, faller bildene tilbake til 2 MB — på den nettpubliserte versjonen gjelder alltid 50 MB)</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.14</div>
     <div class="logg-dato">8. juni 2026</div>
     <ul>
@@ -1958,7 +1968,7 @@ const BRUKERVEILEDNING_HTML = `
   <p><strong>Endre rekkefølge:</strong> hold inne dra-håndtaket <strong>⠿</strong> helt til høyre på punktet (vises når du holder musa over raden) og dra det opp eller ned. En blå strek viser hvor punktet havner når du slipper.</p>
 
   <h4>🖼 Bilde-widget</h4>
-  <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
+  <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 50 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren (IndexedDB) og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
   <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong> i kortets øverste høyre hjørne. Bildekort er per side — forskjellige sider har forskjellige bilder.</p>
 
   <h4>Tilpasse layouten</h4>
@@ -2516,6 +2526,155 @@ function åpneRedigerBacklog(type) {
 // uten et tydelig «mål» går til det sist fokuserte bildekortet.
 let fokusertBildeId = null;
 
+// Maks bildestørrelse: 50 MB med IndexedDB. Uten IDB (lokal fallback i localStorage)
+// gjelder fortsatt 2 MB pga det delte ~5 MB-taket.
+const BILDE_MAKS_IDB      = 50 * 1024 * 1024;
+const BILDE_MAKS_FALLBACK =  2 * 1024 * 1024;
+
+// Objekt-URL-er (blob:…) vi har laget per bildekort. Må revokes når kortet tegnes på
+// nytt eller fjernes, ellers lekker vi minne.
+const bildeUrler = {};
+
+// Bilde-lager: binære Blob-er i IndexedDB (stor kvote, ingen base64-skatt). På file://
+// i Firefox-baserte nettlesere (Zen) er IDB blokkert — da faller vi tilbake til data-URL
+// i state/localStorage (med 2 MB-grense). Den utrullede siden (GitHub Pages, https) får
+// alltid IDB. ALL bildetilgang går gjennom dette objektet, så resten av koden slipper å
+// vite hvilket lager som faktisk brukes.
+const BildeLager = (() => {
+  const DB_NAVN = 'klasserom';
+  const STORE   = 'bilder';
+  let db = null;
+  let idbAktiv = false;
+  let klarPromise = null;
+
+  // Åpner (eller oppretter) databasen én gang. Feiler det — typisk file:// i Firefox —
+  // markerer vi fallback i stedet for å kaste.
+  function klar() {
+    if (klarPromise) return klarPromise;
+    klarPromise = new Promise(resolve => {
+      if (typeof indexedDB === 'undefined' || !indexedDB) { idbAktiv = false; resolve(false); return; }
+      let req;
+      try { req = indexedDB.open(DB_NAVN, 1); }
+      catch (_) { idbAktiv = false; resolve(false); return; }
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => { db = req.result; idbAktiv = true;  resolve(true);  };
+      req.onerror   = () => { idbAktiv = false; resolve(false); };
+      req.onblocked = () => { idbAktiv = false; resolve(false); };
+    });
+    return klarPromise;
+  }
+
+  const store     = mode => db.transaction(STORE, mode).objectStore(STORE);
+  const somPromise = req => new Promise((res, rej) => {
+    req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error);
+  });
+  const filTilDataUrl = fil => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result); r.onerror = () => rej(r.error);
+    r.readAsDataURL(fil);
+  });
+
+  return {
+    klar,
+    get idbAktiv() { return idbAktiv; },
+
+    // Lagre en valgt fil for et kort.
+    async sett(id, fil) {
+      await klar();
+      if (idbAktiv) { await somPromise(store('readwrite').put(fil, id)); return; }
+      state.bilder[id] = { data: await filTilDataUrl(fil) }; // fallback: data-URL i state
+    },
+
+    // Lagre en ferdig Blob direkte i IDB (migrering/import).
+    async settBlob(id, blob) {
+      await klar();
+      if (idbAktiv) await somPromise(store('readwrite').put(blob, id));
+    },
+
+    // Vis-URL for et kort: blob:-URL (IDB) eller data-URL (fallback). null = ingen bilde.
+    async hentUrl(id) {
+      await klar();
+      if (idbAktiv) { const b = await somPromise(store('readonly').get(id)); return b ? URL.createObjectURL(b) : null; }
+      return state.bilder[id]?.data ?? null;
+    },
+
+    // Data-URL for et kort (brukes til eksport, så backup-fila blir selvstendig).
+    async hentDataUrl(id) {
+      await klar();
+      if (idbAktiv) { const b = await somPromise(store('readonly').get(id)); return b ? filTilDataUrl(b) : null; }
+      return state.bilder[id]?.data ?? null;
+    },
+
+    // Tøm bildet for ett kort (behold selve kortet).
+    async slett(id) {
+      await klar();
+      if (idbAktiv) { await somPromise(store('readwrite').delete(id)); return; }
+      if (state.bilder[id]) state.bilder[id] = {};
+    },
+
+    // Slett bilde-blob direkte i IDB (foreldreløs-opprydding).
+    async slettBlob(id) {
+      await klar();
+      if (idbAktiv) await somPromise(store('readwrite').delete(id));
+    },
+
+    // Alle lagrede bilde-IDer (foreldreløs-opprydding).
+    async alleNøkler() {
+      await klar();
+      if (idbAktiv) return somPromise(store('readonly').getAllKeys());
+      return Object.keys(state.bilder);
+    },
+
+    // Tøm hele bilde-lageret (brukes ved «erstatt alt»-import).
+    async tøm() {
+      await klar();
+      if (idbAktiv) await somPromise(store('readwrite').clear());
+    },
+  };
+})();
+
+// Flytter bilder lagret i gammelt format (data-URL i state.bilder[id].data, fra
+// localStorage-tiden) over i IndexedDB, og fjerner de tunge data-URL-ene fra state —
+// det krymper localStorage betydelig. Kjøres én gang ved oppstart. I fallback-modus
+// (ingen IDB) lar vi dem ligge i state, der de fortsatt virker.
+async function migrerGamleBilder() {
+  if (!BildeLager.idbAktiv) return;
+  let migrert = 0;
+  for (const [id, obj] of Object.entries(state.bilder)) {
+    if (obj && typeof obj.data === 'string' && obj.data.startsWith('data:')) {
+      try {
+        const blob = await (await fetch(obj.data)).blob();
+        await BildeLager.settBlob(id, blob);
+        state.bilder[id] = {}; // strip data-URL-en ut av state
+        migrert++;
+      } catch (e) { console.warn('Bilde-migrering feilet for', id, e); }
+    }
+  }
+  if (migrert) saveState();
+}
+
+// Sletter «foreldreløse» bilder: blob-er i IDB som ikke lenger har et kort i state.bilder
+// (kan oppstå etter import, migrering eller en feil). Trygt — rører aldri bilder i bruk.
+async function ryddForeldreløseBilder() {
+  if (!BildeLager.idbAktiv) return;
+  const gyldige = new Set(Object.keys(state.bilder));
+  for (const id of await BildeLager.alleNøkler()) {
+    if (!gyldige.has(id)) {
+      await BildeLager.slettBlob(id);
+      console.info('Ryddet foreldreløst bilde:', id);
+    }
+  }
+}
+
+// Async bilde-oppstart: åpne lageret, migrer gammelt format, rydd foreldreløse, og tegn
+// alle bildekort. Kalles fra init etter at kortene er bygd.
+async function initBilder() {
+  await BildeLager.klar();
+  await migrerGamleBilder();
+  await ryddForeldreløseBilder();
+  for (const id of Object.keys(state.bilder)) renderBilde(id);
+}
+
 // Bygger DOM-en for ett bilde-kort (flerinstans, som notat). Inneholder opplastings-
 // flate, <img> for visning og en fjern-knapp — alle skjult/vist av renderBilde.
 function lagBildeElement(instansId) {
@@ -2542,29 +2701,33 @@ function lagBildeElement(instansId) {
   return div;
 }
 
-// Kobler et bilde-kort: klikk på kortet gjør det til «fokusert» (lim-inn-mål), og
-// vi tegner gjeldende tilstand (tomt eller med bilde).
+// Kobler et bilde-kort: klikk på kortet gjør det til «fokusert» (lim-inn-mål). Selve
+// tegningen skjer via renderBilde (kalt fra initBilder ved oppstart og etter endringer);
+// et nytt, tomt kort viser opplastingsflaten allerede fra HTML-en.
 function setupBilde(instansId) {
   document.getElementById(`card-${instansId}`)?.addEventListener('click', () => {
     fokusertBildeId = instansId;
   });
-  renderBilde(instansId);
 }
 
-// Veksler bilde-kortet mellom to tilstander: har vi lagrede bildedata viser vi bildet
-// + fjern-knappen; ellers viser vi opplastingsflaten.
-function renderBilde(instansId) {
+// Veksler bilde-kortet mellom to tilstander: har kortet et bilde i lageret viser vi det
+// + fjern-knappen; ellers viser vi opplastingsflaten. Async fordi bildet hentes fra
+// IndexedDB. Gamle objekt-URL-er revokes så vi ikke lekker minne.
+async function renderBilde(instansId) {
   const img    = document.getElementById(`bilde-img-${instansId}`);
   const label  = document.getElementById(`bilde-label-${instansId}`);
   const fjernK = document.getElementById(`bilde-fjern-${instansId}`);
   if (!img) return;
-  const data = state.bilder[instansId]?.data;
-  if (data) {
-    img.src = data;
+  if (bildeUrler[instansId]) { URL.revokeObjectURL(bildeUrler[instansId]); delete bildeUrler[instansId]; }
+  const url = await BildeLager.hentUrl(instansId);
+  if (url) {
+    if (url.startsWith('blob:')) bildeUrler[instansId] = url; // bare objekt-URL-er må revokes
+    img.src = url;
     img.style.display = '';
     label.style.display = 'none';
     fjernK.style.display = '';
   } else {
+    img.removeAttribute('src');
     img.style.display = 'none';
     label.style.display = '';
     fjernK.style.display = 'none';
@@ -2577,33 +2740,34 @@ function lastOppBilde(input, instansId) {
   if (fil) lesBildefil(fil, instansId);
 }
 
-// Leser en bildefil og lagrer den som en data-URL (base64) i state. Vi lagrer i
-// localStorage som har ~5 MB tak, derfor grensa på 2 MB her — og data-URL-en blir
-// ~33 % større enn fila. FileReader er asynkron: lagring skjer i onload-callbacken.
-function lesBildefil(fil, instansId) {
-  if (fil.size > 2 * 1024 * 1024) {
-    notify('Bildet er for stort — maks 2 MB', 'warning');
+// Leser en bildefil og lagrer den i bilde-lageret (Blob i IndexedDB, eller data-URL i
+// fallback). Grensa er 50 MB med IDB, 2 MB i fallback (det delte ~5 MB-taket).
+async function lesBildefil(fil, instansId) {
+  if (!fil.type.startsWith('image/')) { notify('Det ser ikke ut som en bildefil', 'warning'); return; }
+  await BildeLager.klar();
+  const maks = BildeLager.idbAktiv ? BILDE_MAKS_IDB : BILDE_MAKS_FALLBACK;
+  if (fil.size > maks) {
+    notify(BildeLager.idbAktiv
+      ? 'Bildet er for stort — maks 50 MB'
+      : 'Lokalt uten IndexedDB er grensa 2 MB. På den utrullede siden gjelder 50 MB.', 'warning');
     return;
   }
-  const reader = new FileReader();
-  reader.onload = e => {
-    state.bilder[instansId].data = e.target.result;
-    saveState();
-    renderBilde(instansId);
-  };
-  reader.readAsDataURL(fil);
+  await BildeLager.sett(instansId, fil);
+  if (!state.bilder[instansId]) state.bilder[instansId] = {}; // sørg for register-oppføring
+  saveState();
+  renderBilde(instansId);
 }
 
 // Tømmer bildet fra et kort (men beholder selve kortet — klar for et nytt bilde).
-function fjernBildeData(instansId) {
-  state.bilder[instansId].data = null;
+async function fjernBildeData(instansId) {
+  await BildeLager.slett(instansId);
   saveState();
   renderBilde(instansId);
 }
 
 // Fjerner hele bilde-kortet fra denne siden. Bildedataene slettes kun hvis ingen
 // andre sider bruker kortet (samme mønster som fjernNotat).
-function fjernBildeWidget(instansId) {
+async function fjernBildeWidget(instansId) {
   const cardId = `card-${instansId}`;
   const side = aktivSide();
   side.widget_layout = side.widget_layout.filter(w => w.id !== cardId);
@@ -2611,6 +2775,8 @@ function fjernBildeWidget(instansId) {
   const ingenSiderBrukerDen = state.sider.every(s => !s.widget_layout.some(w => w.id === cardId));
   if (ingenSiderBrukerDen) {
     delete state.bilder[instansId];
+    await BildeLager.slett(instansId);
+    if (bildeUrler[instansId]) { URL.revokeObjectURL(bildeUrler[instansId]); delete bildeUrler[instansId]; }
     document.getElementById(cardId)?.remove();
   }
   renderWidgetMeny();
@@ -2622,7 +2788,7 @@ function fjernBildeWidget(instansId) {
 function leggTilBilde() {
   state.bilde_teller++;
   const id = `bilde-${state.bilde_teller}`;
-  state.bilder[id] = { data: null };
+  state.bilder[id] = {};
   const cardId = `card-${id}`;
   const col = Math.min(3, aktivSide().kolonner ?? 3);
   aktivSide().widget_layout.push({ id: cardId, col });
@@ -2729,7 +2895,14 @@ function oppdaterEksportVarsel() {
 // en versjon + app-navn rundt innholdet så import kan kjenne igjen og validere fila.
 // Trikset for nedlasting: lag en Blob, lag en midlertidig <a download>, klikk den
 // programmatisk, og rydd opp. Etterpå markeres dataene som «eksportert».
-function eksporterData() {
+async function eksporterData() {
+  // Bygg bilder med data-URL-er (hentet fra IndexedDB, eller state i fallback) så
+  // backup-fila blir selvstendig og beholder samme format som før — gamle/nye
+  // backups er kryss-kompatible.
+  const bilderEksport = {};
+  for (const id of Object.keys(state.bilder)) {
+    bilderEksport[id] = { data: await BildeLager.hentDataUrl(id) };
+  }
   const nå = new Date();
   const data = {
     app: 'klasserom-dashboard',
@@ -2748,7 +2921,7 @@ function eksporterData() {
       aktiv_side:   state.aktiv_side,
       widgetinnhold: {
         notater:      state.notater,
-        bilder:       state.bilder,
+        bilder:       bilderEksport,
         notat_teller: state.notat_teller,
         bilde_teller: state.bilde_teller,
       },
@@ -2812,7 +2985,7 @@ function håndterImportFil(input) {
 //  - «flett_lister»: behold alt nåværende, bare legg til/oppdater lagrede lister.
 //  - «erstatt»: bygg en helt ny tilstand fra fila (tolerant — manglende felt får
 //    dagens defaults), skriv den rett til localStorage og last siden på nytt.
-function bekreftImport() {
+async function bekreftImport() {
   const data  = ventendeImport;
   if (!data) { lukkModal(); return; }
   const modus = document.querySelector('input[name="import-modus"]:checked')?.value ?? 'erstatt';
@@ -2848,10 +3021,33 @@ function bekreftImport() {
     typeof innhold.aktiv_side === 'number' ? innhold.aktiv_side : 0,
     ny.sider.length - 1,
   );
+
+  // Flytt importerte bilde-data-URL-er ut av state-blobben og inn i IndexedDB. Ellers
+  // kan store bilder sprenge localStorage-taket idet vi skriver hele staten under. Ved
+  // «erstatt alt» tømmer vi lageret først, så det matcher nøyaktig det importerte.
+  await BildeLager.klar();
+  if (BildeLager.idbAktiv && ny.bilder) {
+    await BildeLager.tøm();
+    for (const id of Object.keys(ny.bilder)) {
+      const d = ny.bilder[id]?.data;
+      if (typeof d === 'string' && d.startsWith('data:')) {
+        try { await BildeLager.settBlob(id, await (await fetch(d)).blob()); }
+        catch (e) { console.warn('Import-bilde feilet for', id, e); }
+      }
+      ny.bilder[id] = {}; // lett register i state
+    }
+  }
+
   // En nettopp importert backup regnes som «eksportert» (ingen ulagrede endringer)
   ny.eksport_signatur = beregnEksportSignatur(ny);
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(ny));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ny));
+  } catch (e) {
+    console.warn('Import-lagring feilet:', e);
+    notify('Klarte ikke lagre importen — for mye data for nettleseren', 'error');
+    return;
+  }
   ventendeImport = null;
   location.reload(); // enkleste, sikreste vei til full re-render fra ny tilstand
 }
@@ -2911,6 +3107,10 @@ function init() {
   renderSiderNav();
   oppdaterKolonneStepper();
   oppdaterEksportVarsel();
+
+  // Async bilde-oppstart: åpne IndexedDB, migrer gammelt localStorage-format, rydd
+  // foreldreløse blober og tegn bildekortene. Blokkerer ikke resten av oppstarten.
+  initBilder();
 }
 
 // Start appen når DOM-en er ferdig parset (skriptet ligger i <head> uten defer).
