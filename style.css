@@ -1651,6 +1651,123 @@ main.drag-active::before {
     border-color: var(--accent);
 }
 
+/* ===================== YouTube-widget ===================== */
+.youtube-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.youtube-input {
+    display: flex;
+    gap: 6px;
+}
+.youtube-input input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    outline: none;
+}
+.youtube-input input:focus {
+    border-color: var(--primary);
+}
+.youtube-modus {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.yt-modus-knapp {
+    flex: 1;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.yt-modus-knapp.aktiv {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+.yt-bytt-lenke {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+}
+.yt-bytt-lenke:hover {
+    color: var(--text);
+}
+/* 16:9-spiller. I lyd-modus krymper boksen til en kompakt bar — iframen er fortsatt
+   rendret (ikke display:none), så lyden spiller videre; lyd-panelet dekker bildet. */
+.youtube-media {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.youtube-media .youtube-player,
+.youtube-media iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+.youtube-media.youtube-lyd {
+    aspect-ratio: auto;
+    height: 52px;
+}
+.youtube-lyd-panel {
+    display: none;
+}
+.youtube-media.youtube-lyd .youtube-lyd-panel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    background: var(--primary-l);
+    color: var(--text);
+}
+.yt-spill {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--primary);
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.yt-lyd-tittel {
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ===================== Begrensning-modal ===================== */
 .modal-boks {
     background: var(--card);

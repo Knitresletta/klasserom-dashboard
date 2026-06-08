@@ -70,8 +70,10 @@ function defaultState() {
     widget_størrelser: {},
     notater:      { 'notat-1': { tekst: '', kursiv: false } },
     bilder:       { 'bilde-1': {} }, // register over bildekort; selve bildene bor i IndexedDB
+    youtube:      {},                // ingen YouTube-kort som standard; legges til via «+»
     notat_teller: 1,
     bilde_teller: 1,
+    youtube_teller: 0,
     eksport_signatur: null, // signatur av data ved siste eksport (for endrings-varsel)
     aktiv_side: 0,
     sider: [ nySide('Side 1') ],
@@ -1254,14 +1256,16 @@ function renderWidgetMeny() {
 
   // Fler-instans widgets: ingen checkbox, bare "+". Tell hvor mange siden har.
   const aktivIds = aktivSide().widget_layout.map(w => w.id);
-  const antNotat = aktivIds.filter(id => id.startsWith('card-notat-')).length;
-  const antBilde = aktivIds.filter(id => id.startsWith('card-bilde-')).length;
+  const antNotat   = aktivIds.filter(id => id.startsWith('card-notat-')).length;
+  const antBilde   = aktivIds.filter(id => id.startsWith('card-bilde-')).length;
+  const antYoutube = aktivIds.filter(id => id.startsWith('card-youtube-')).length;
   const leggTil = `
     <div class="widget-meny-sep"></div>
     <div class="widget-meny-tittel">Legg til flere</div>
     <div class="widget-meny-rad" style="gap:6px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" onclick="leggTilNotat()">+ 📝 Notat${antNotat ? ` (${antNotat})` : ''}</button>
       <button class="btn btn-ghost btn-sm" onclick="leggTilBilde()">+ 🖼 Bilde${antBilde ? ` (${antBilde})` : ''}</button>
+      <button class="btn btn-ghost btn-sm" onclick="leggTilYoutube()">+ ▶️ YouTube${antYoutube ? ` (${antYoutube})` : ''}</button>
     </div>`;
 
   dropdown.innerHTML = statiske + leggTil;
@@ -1696,6 +1700,14 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.16</div>
+    <div class="logg-dato">8. juni 2026</div>
+    <ul>
+      <li><strong>Ny YouTube-widget:</strong> legg til så mange YouTube-kort du vil via <strong>⊞ Widgets → + ▶️ YouTube</strong>. Lim inn en YouTube-lenke, så spilles videoen rett i kortet</li>
+      <li><strong>Kun lyd-modus:</strong> bytt et YouTube-kort til <strong>🎵 Kun lyd</strong> — bildet skjules og du får en kompakt play/pause-linje. Perfekt for bakgrunnsmusikk eller lydklipp uten at videoen tar plass</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.15</div>
     <div class="logg-dato">8. juni 2026</div>
     <ul>
@@ -1970,6 +1982,11 @@ const BRUKERVEILEDNING_HTML = `
   <h4>🖼 Bilde-widget</h4>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 50 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren (IndexedDB) og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
   <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong> i kortets øverste høyre hjørne. Bildekort er per side — forskjellige sider har forskjellige bilder.</p>
+
+  <h4>▶️ YouTube-widget</h4>
+  <p>Legg til et YouTube-kort via <strong>⊞ Widgets</strong>-menyen og <strong>+ ▶️ YouTube</strong>. Lim inn en YouTube-lenke (vanlig lenke, <em>youtu.be</em> eller <em>Shorts</em> funker alle) og trykk <strong>Vis</strong> — videoen spilles rett i kortet.</p>
+  <p><strong>🎵 Kun lyd:</strong> bytt mellom <strong>▶ Video</strong> og <strong>🎵 Kun lyd</strong> øverst i kortet. I lyd-modus skjules bildet og du får en liten play/pause-linje — fint for bakgrunnsmusikk eller et lydklipp uten at videoen tar plass. Lyden spiller videre uavbrutt når du bytter modus. Trykk <strong>↻</strong> for å bytte til en annen lenke, og <strong>✕</strong> for å slette kortet.</p>
+  <p>Du kan ha <strong>flere YouTube-kort</strong>, og de er per side som de andre widgetene.</p>
 
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Layouten huskes automatisk.</p>
@@ -2801,6 +2818,219 @@ function leggTilBilde() {
   saveState();
 }
 
+// ===================== YouTube-widget =====================
+// Flerinstans, speiler bilde-kortet. state.youtube[id] = { url, videoId, start, modus }.
+// Video spilles via YouTube IFrame Player API, slik at lyd-modus kan skjule bildet og
+// likevel styre avspillingen med våre egne knapper. Player-instansene holdes her, ikke
+// i state (de er DOM-objekter), og rives ned når et kort fjernes eller bytter lenke.
+const ytPlayers = {};
+let ytApiPromise = null;
+
+// Laster YouTube IFrame Player API én gang og resolver når YT.Player er klar. API-et
+// kaller den globale onYouTubeIframeAPIReady — vi kjeder oss på en evt. eksisterende.
+function lastYoutubeApi() {
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise(resolve => {
+    if (window.YT && window.YT.Player) { resolve(window.YT); return; }
+    const forrige = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (forrige) forrige(); resolve(window.YT); };
+    if (!document.getElementById('yt-iframe-api')) {
+      const s = document.createElement('script');
+      s.id = 'yt-iframe-api';
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    }
+  });
+  return ytApiPromise;
+}
+
+// Plukker ut 11-tegns video-ID fra de vanlige YouTube-lenkeformatene (watch?v=, youtu.be,
+// /embed/, /shorts/, /live/) — eller en rå ID. Returnerer null hvis ingenting matcher.
+function parseYoutubeId(url) {
+  if (!url) return null;
+  url = url.trim();
+  if (/^[\w-]{11}$/.test(url)) return url;
+  let m;
+  if ((m = url.match(/youtu\.be\/([\w-]{11})/)))            return m[1];
+  if ((m = url.match(/[?&]v=([\w-]{11})/)))                 return m[1];
+  if ((m = url.match(/\/(?:embed|shorts|v|live)\/([\w-]{11})/))) return m[1];
+  return null;
+}
+
+// Starttid i sekunder fra en lenke (?t=90 eller ?start=90). Bare hele sekunder.
+function parseYoutubeStart(url) {
+  const m = (url || '').match(/[?&](?:t|start)=(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// Bygger DOM-en for ett YouTube-kort. Selve innholdet (lenke-felt eller spiller) tegnes
+// av renderYoutube, som kalles fra setupYoutube.
+function lagYoutubeElement(instansId) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.id = `card-${instansId}`;
+  div.innerHTML = `
+    <button class="kl-widget-close" onclick="fjernYoutubeWidget('${instansId}')" title="Slett dette YouTube-kortet">✕</button>
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>▶️ YouTube</h2>
+    </div>
+    <div id="youtube-body-${instansId}" class="youtube-body"></div>
+  `;
+  return div;
+}
+
+function setupYoutube(instansId) {
+  renderYoutube(instansId);
+}
+
+// Tegner kortet etter tilstand: uten videoId vises et lenke-felt; med videoId vises
+// modus-bryteren + spilleren (16:9 i video-modus, kompakt lyd-bar i lyd-modus). Lyd-
+// panelet ligger alltid i DOM-en (skjult av CSS i video-modus), så bytte mellom modus
+// bare veksler en klasse — spilleren rives ALDRI ned ved modusbytte, så lyden er
+// sømløs. En ny spiller opprettes kun når selve videoen settes/endres.
+function renderYoutube(instansId) {
+  const body = document.getElementById(`youtube-body-${instansId}`);
+  if (!body) return;
+  // Riv ned evt. eksisterende spiller før vi bygger om body (innerHTML fjerner iframen).
+  if (ytPlayers[instansId]) { try { ytPlayers[instansId].destroy(); } catch (_) {} delete ytPlayers[instansId]; }
+
+  const data = state.youtube[instansId] ?? {};
+  if (!data.videoId) {
+    body.innerHTML = `
+      <div class="youtube-input">
+        <input type="text" id="youtube-url-${instansId}" placeholder="Lim inn YouTube-lenke…" autocomplete="off">
+        <button class="btn btn-success btn-sm" onclick="settYoutubeUrlFraFelt('${instansId}')">Vis</button>
+      </div>`;
+    const inp = document.getElementById(`youtube-url-${instansId}`);
+    inp?.addEventListener('keydown', e => { if (e.key === 'Enter') settYoutubeUrlFraFelt(instansId); });
+    return;
+  }
+
+  const erLyd = data.modus === 'lyd';
+  body.innerHTML = `
+    <div class="youtube-modus">
+      <button class="yt-modus-knapp video ${erLyd ? '' : 'aktiv'}" onclick="settYoutubeModus('${instansId}','video')">▶ Video</button>
+      <button class="yt-modus-knapp lyd ${erLyd ? 'aktiv' : ''}" onclick="settYoutubeModus('${instansId}','lyd')">🎵 Kun lyd</button>
+      <button class="yt-bytt-lenke" onclick="byttYoutubeLenke('${instansId}')" title="Bytt lenke">↻</button>
+    </div>
+    <div class="youtube-media ${erLyd ? 'youtube-lyd' : ''}" id="youtube-media-${instansId}">
+      <div id="youtube-player-${instansId}" class="youtube-player"></div>
+      <div class="youtube-lyd-panel">
+        <button class="yt-spill" id="yt-spill-${instansId}" onclick="ytSpillPause('${instansId}')" title="Spill / pause">▶</button>
+        <span class="yt-lyd-tittel" id="yt-tittel-${instansId}">🎵 Laster…</span>
+      </div>
+    </div>`;
+  opprettYoutubePlayer(instansId, data.videoId, data.start || 0);
+}
+
+// Oppretter YT.Player i mål-diven (som API-et bytter ut med en iframe). nocookie-verten
+// gir færre cookies. onReady setter lyd-panelets tittel; onStateChange holder play/pause-
+// knappen i synk. Guard hvis kortet ble fjernet mens API-et lastet.
+async function opprettYoutubePlayer(instansId, videoId, start) {
+  const YT = await lastYoutubeApi();
+  const mål = document.getElementById(`youtube-player-${instansId}`);
+  if (!mål || !state.youtube[instansId]) return;
+  ytPlayers[instansId] = new YT.Player(mål, {
+    videoId,
+    host: 'https://www.youtube-nocookie.com',
+    playerVars: { start, rel: 0, modestbranding: 1, playsinline: 1 },
+    events: {
+      onReady: e => {
+        const t = document.getElementById(`yt-tittel-${instansId}`);
+        if (t) { const d = e.target.getVideoData?.(); t.textContent = '🎵 ' + (d?.title || 'YouTube'); }
+      },
+      onStateChange: e => oppdaterSpillKnapp(instansId, e.data),
+    },
+  });
+}
+
+// Veksler video/lyd uten å røre spilleren: bare en CSS-klasse + knappemarkering. Lyden
+// fortsetter uavbrutt fordi iframen aldri fjernes (CSS klipper bare bildet bort).
+function settYoutubeModus(instansId, modus) {
+  const d = state.youtube[instansId];
+  if (!d) return;
+  d.modus = modus;
+  saveState();
+  const erLyd = modus === 'lyd';
+  document.getElementById(`youtube-media-${instansId}`)?.classList.toggle('youtube-lyd', erLyd);
+  const body = document.getElementById(`youtube-body-${instansId}`);
+  body?.querySelector('.yt-modus-knapp.video')?.classList.toggle('aktiv', !erLyd);
+  body?.querySelector('.yt-modus-knapp.lyd')?.classList.toggle('aktiv', erLyd);
+}
+
+// Spill/pause via API-et (1 = spiller av i YouTube sitt state-skjema).
+function ytSpillPause(instansId) {
+  const p = ytPlayers[instansId];
+  if (!p) return;
+  if (p.getPlayerState?.() === 1) p.pauseVideo(); else p.playVideo();
+}
+function oppdaterSpillKnapp(instansId, playerState) {
+  const b = document.getElementById(`yt-spill-${instansId}`);
+  if (b) b.textContent = playerState === 1 ? '⏸' : '▶';
+}
+
+// Leser lenke-feltet og setter videoen.
+function settYoutubeUrlFraFelt(instansId) {
+  const inp = document.getElementById(`youtube-url-${instansId}`);
+  if (inp) settYoutubeUrl(instansId, inp.value);
+}
+function settYoutubeUrl(instansId, url) {
+  const videoId = parseYoutubeId(url);
+  if (!videoId) { notify('Fant ingen gyldig YouTube-lenke', 'warning'); return; }
+  state.youtube[instansId] = {
+    url: url.trim(),
+    videoId,
+    start: parseYoutubeStart(url),
+    modus: state.youtube[instansId]?.modus || 'video',
+  };
+  saveState();
+  renderYoutube(instansId);
+}
+
+// Tilbake til lenke-feltet (behold valgt modus). Rydder spilleren.
+function byttYoutubeLenke(instansId) {
+  if (ytPlayers[instansId]) { try { ytPlayers[instansId].destroy(); } catch (_) {} delete ytPlayers[instansId]; }
+  const modus = state.youtube[instansId]?.modus || 'video';
+  state.youtube[instansId] = { modus };
+  saveState();
+  renderYoutube(instansId);
+}
+
+// Nytt, tomt YouTube-kort på aktiv side (speiler leggTilBilde).
+function leggTilYoutube() {
+  state.youtube_teller++;
+  const id = `youtube-${state.youtube_teller}`;
+  state.youtube[id] = { modus: 'video' };
+  const cardId = `card-${id}`;
+  const col = Math.min(3, aktivSide().kolonner ?? 3);
+  aktivSide().widget_layout.push({ id: cardId, col });
+  const el = lagYoutubeElement(id);
+  document.querySelector(`.col-wrapper[data-col="${col}"]`).appendChild(el);
+  setupYoutube(id);
+  settOppDragOgDrop();
+  applyLayout();
+  renderWidgetMeny();
+  saveState();
+}
+
+// Fjerner et YouTube-kort fra denne siden. Data + spiller slettes kun hvis ingen andre
+// sider bruker kortet (samme mønster som fjernBildeWidget).
+function fjernYoutubeWidget(instansId) {
+  const cardId = `card-${instansId}`;
+  const side = aktivSide();
+  side.widget_layout = side.widget_layout.filter(w => w.id !== cardId);
+  side.widget_hidden  = (side.widget_hidden ?? []).filter(id => id !== cardId);
+  const ingenSiderBrukerDen = state.sider.every(s => !s.widget_layout.some(w => w.id === cardId));
+  if (ingenSiderBrukerDen) {
+    if (ytPlayers[instansId]) { try { ytPlayers[instansId].destroy(); } catch (_) {} delete ytPlayers[instansId]; }
+    delete state.youtube[instansId];
+    document.getElementById(cardId)?.remove();
+  }
+  renderWidgetMeny();
+  saveState();
+}
+
 // ===================== Gruppebegrensning =====================
 // Legger til et «hold fra hverandre»-par på aktiv side, som lagGrupper respekterer.
 // Hopper over tomt/likt par og duplikater (par er retningsløse: A+B == B+A).
@@ -2920,10 +3150,12 @@ async function eksporterData() {
       sider:        state.sider,
       aktiv_side:   state.aktiv_side,
       widgetinnhold: {
-        notater:      state.notater,
-        bilder:       bilderEksport,
-        notat_teller: state.notat_teller,
-        bilde_teller: state.bilde_teller,
+        notater:        state.notater,
+        bilder:         bilderEksport,
+        youtube:        state.youtube,
+        notat_teller:   state.notat_teller,
+        bilde_teller:   state.bilde_teller,
+        youtube_teller: state.youtube_teller,
       },
     },
   };
@@ -3013,10 +3245,12 @@ async function bekreftImport() {
   if (innhold.klasselister   !== undefined) ny.lister = innhold.klasselister;
   if (Array.isArray(innhold.sider) && innhold.sider.length) ny.sider = innhold.sider;
   const wi = innhold.widgetinnhold ?? {};
-  if (wi.notater      !== undefined) ny.notater = wi.notater;
-  if (wi.bilder       !== undefined) ny.bilder = wi.bilder;
-  if (wi.notat_teller !== undefined) ny.notat_teller = wi.notat_teller;
-  if (wi.bilde_teller !== undefined) ny.bilde_teller = wi.bilde_teller;
+  if (wi.notater        !== undefined) ny.notater = wi.notater;
+  if (wi.bilder         !== undefined) ny.bilder = wi.bilder;
+  if (wi.youtube        !== undefined) ny.youtube = wi.youtube;
+  if (wi.notat_teller   !== undefined) ny.notat_teller = wi.notat_teller;
+  if (wi.bilde_teller   !== undefined) ny.bilde_teller = wi.bilde_teller;
+  if (wi.youtube_teller !== undefined) ny.youtube_teller = wi.youtube_teller;
   ny.aktiv_side = Math.min(
     typeof innhold.aktiv_side === 'number' ? innhold.aktiv_side : 0,
     ny.sider.length - 1,
@@ -3078,6 +3312,12 @@ function init() {
     const el = lagBildeElement(instansId);
     document.querySelector('.col-wrapper[data-col="3"]').appendChild(el);
     setupBilde(instansId);
+  }
+
+  for (const instansId of Object.keys(state.youtube ?? {})) {
+    const el = lagYoutubeElement(instansId);
+    document.querySelector('.col-wrapper[data-col="3"]').appendChild(el);
+    setupYoutube(instansId);
   }
 
   // Lim inn bilde (Ctrl+V): går til det sist fokuserte bildekortet. Vi leter gjennom
