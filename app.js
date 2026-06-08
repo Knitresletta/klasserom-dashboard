@@ -393,15 +393,95 @@ function renderElever() {
     const gi        = gruppeKart.get(navn);
     const harGruppe = gi !== undefined;
     const farge     = harGruppe ? GRUPPE_FARGER[gi % GRUPPE_FARGER.length] : null;
+    // Eleven som redigeres viser et skrivefelt i stedet for navnet. Enter og «mistet
+    // fokus» lagrer, Esc avbryter. Ellers: et klikkbart navn som åpner redigeringen.
+    const navnHtml = i === redigerElevIdx
+      ? `<input class="elev-rediger-input" type="text" maxlength="60" value="${esc(navn)}"
+            onkeydown="if(event.key==='Enter')lagreRedigerElev(${i},this.value);else if(event.key==='Escape')avbrytRedigerElev()"
+            onblur="lagreRedigerElev(${i},this.value)">`
+      : `<span class="elev-navn"${harGruppe ? ` style="color:${farge.text}"` : ''} onclick="startRedigerElev(${i})" title="Klikk for å redigere">${esc(navn)}</span>`;
     return `
       <div class="elev-item">
         <span class="elev-nr">${i + 1}.</span>
         ${harGruppe ? `<span class="elev-dot" style="background:${farge.text}"></span>` : ''}
-        <span class="elev-navn"${harGruppe ? ` style="color:${farge.text}"` : ''}>${esc(navn)}</span>
+        ${navnHtml}
         <button class="elev-slett" onclick="fjernElev(${i})" title="Fjern ${esc(navn)}">✕</button>
       </div>`;
   }).join('');
+  // Etter at lista er tegnet: fokuser redigeringsfeltet og marker teksten, så læreren
+  // kan skrive rett over eller rette en typo uten å klikke i feltet først.
+  if (redigerElevIdx !== null) {
+    const inp = liste.querySelector('.elev-rediger-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }
   oppdaterBegrensningSelecter();
+}
+
+// Indeksen til eleven som redigeres inline akkurat nå (null = ingen redigering pågår).
+// renderElever leser denne for å bytte navnet ut med et skrivefelt.
+let redigerElevIdx = null;
+
+// Starter inline-redigering av elev nr. idx og tegner lista på nytt (renderElever
+// fokuserer feltet). Ingen guard her: klikker du rett fra én elev til en annen, har
+// blur allerede lagret den forrige.
+function startRedigerElev(idx) {
+  redigerElevIdx = idx;
+  renderElever();
+}
+
+// Lagrer et redigert elevnavn. Guarden mot null gjør det andre kallet til en no-op —
+// både blur som fyrer rett etter Enter, og blur som fyrer etter at vi alt har avbrutt.
+function lagreRedigerElev(idx, verdi) {
+  if (redigerElevIdx === null) return;
+  redigerElevIdx = null;
+  endreElevNavn(idx, verdi);
+}
+
+// Avbryter redigeringen uten å lagre og tegner lista tilbake til normal visning.
+function avbrytRedigerElev() {
+  if (redigerElevIdx === null) return;
+  redigerElevIdx = null;
+  renderElever();
+}
+
+// Endrer navnet på eleven ved idx. Samme normalisering (trim + stor forbokstav) og
+// duplikat-sjekk som ved ny elev. Tomt eller uendret navn avbryter stille. Når navnet
+// faktisk endres, lar vi det FØLGE MED til grupper, trekk-backlogs og begrensninger
+// via byttNavnOveralt — ellers ville de pekt på et navn som ikke lenger finnes i lista.
+function endreElevNavn(idx, nyttNavn) {
+  const s = aktivSide();
+  const gammelt = s.elever[idx];
+  if (gammelt === undefined) { renderElever(); return; }
+  nyttNavn = nyttNavn.trim().replace(/\b\p{L}/gu, l => l.toUpperCase());
+  if (!nyttNavn || nyttNavn === gammelt) { renderElever(); return; }
+  if (s.elever.some((e, i) => i !== idx && e.toLowerCase() === nyttNavn.toLowerCase())) {
+    notify(`${nyttNavn} er allerede inne`, 'warning');
+    renderElever();
+    return;
+  }
+  s.elever = s.elever.map((e, i) => i === idx ? nyttNavn : e);
+  byttNavnOveralt(s, gammelt, nyttNavn);
+  saveState();
+  renderElever();
+  renderAlleTrekk();
+  renderGrupper();
+  renderBegrensninger();
+  notify(`✓ Endret til ${nyttNavn}`);
+}
+
+// Bytter alle forekomster av et elevnavn på siden: grupper, hver trekk-backlog og
+// «valgt»-felt, og hold-fra-hverandre-parene. Kalles når en elev får nytt navn, så
+// ingen referanse blir hengende på det gamle navnet.
+function byttNavnOveralt(s, gammelt, nytt) {
+  const bytt = n => (n === gammelt ? nytt : n);
+  if (s.grupper) s.grupper = s.grupper.map(g => g.map(bytt));
+  s.tilfeldig_backlog    = (s.tilfeldig_backlog    ?? []).map(bytt);
+  if (s.tilfeldig_valgt === gammelt) s.tilfeldig_valgt = nytt;
+  s.ordenselev_backlog   = (s.ordenselev_backlog   ?? []).map(bytt);
+  s.ordenselev_valgte    = (s.ordenselev_valgte    ?? []).map(bytt);
+  s.ulv_backlog          = (s.ulv_backlog          ?? []).map(bytt);
+  if (s.ulv_valgt === gammelt) s.ulv_valgt = nytt;
+  s.gruppe_begrensninger = (s.gruppe_begrensninger ?? []).map(par => par.map(bytt));
 }
 
 // Returnerer en stokket KOPI av arrayet (originalen røres ikke) med Fisher–Yates:
@@ -809,8 +889,36 @@ function toggleDagsplanFerdig(idx) {
   renderDagsplan();
 }
 
-// Tegner dagsplanen på nytt. Hele raden er klikkbar for å toggle ferdig; slett-
-// knappen stopper propagering så et klikk på ✕ ikke også krysser av punktet.
+// Indeksen til dagsplan-punktet som redigeres inline (null = ingen redigering pågår).
+let redigerDagsplanIdx = null;
+
+// Starter inline-redigering av dagsplan-punkt nr. idx.
+function startRedigerDagsplan(idx) {
+  redigerDagsplanIdx = idx;
+  renderDagsplan();
+}
+
+// Lagrer redigert dagsplan-tekst. Tom eller uendret tekst lar punktet stå urørt.
+// Guarden mot null gjør det andre kallet (blur rett etter Enter) til en no-op.
+function lagreRedigerDagsplan(idx, verdi) {
+  if (redigerDagsplanIdx === null) return;
+  redigerDagsplanIdx = null;
+  const tekst = verdi.trim();
+  const p = aktivSide().dagsplan[idx];
+  if (p && tekst && tekst !== p.tekst) { p.tekst = tekst; saveState(); }
+  renderDagsplan();
+}
+
+// Avbryter redigeringen uten å lagre.
+function avbrytRedigerDagsplan() {
+  if (redigerDagsplanIdx === null) return;
+  redigerDagsplanIdx = null;
+  renderDagsplan();
+}
+
+// Tegner dagsplanen på nytt. Prikken (●) toggler ferdig, teksten åpner inline-
+// redigering, og ✕ fjerner punktet — tre adskilte klikkmål på samme rad. Punktet som
+// redigeres viser et skrivefelt i stedet for teksten.
 function renderDagsplan() {
   const dagsplan = aktivSide().dagsplan;
   const liste = document.getElementById('dagsplan-liste');
@@ -818,12 +926,24 @@ function renderDagsplan() {
     liste.innerHTML = '<p class="tom-tekst" style="padding:4px">Tom — trykk "+ Legg til punkt"</p>';
     return;
   }
-  liste.innerHTML = dagsplan.map((p, i) => `
-    <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}" onclick="toggleDagsplanFerdig(${i})">
-      <span class="dagsplan-prikk">●</span>
-      <span class="dagsplan-tekst">${esc(p.tekst)}</span>
-      <button class="dagsplan-slett" onclick="event.stopPropagation();fjernDagsplan(${i})" title="Fjern">✕</button>
-    </div>`).join('');
+  liste.innerHTML = dagsplan.map((p, i) => {
+    const innhold = i === redigerDagsplanIdx
+      ? `<input class="dagsplan-rediger-input" type="text" maxlength="80" value="${esc(p.tekst)}"
+            onkeydown="if(event.key==='Enter')lagreRedigerDagsplan(${i},this.value);else if(event.key==='Escape')avbrytRedigerDagsplan()"
+            onblur="lagreRedigerDagsplan(${i},this.value)">`
+      : `<span class="dagsplan-tekst" onclick="startRedigerDagsplan(${i})" title="Klikk for å redigere">${esc(p.tekst)}</span>`;
+    return `
+    <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}">
+      <span class="dagsplan-prikk" onclick="toggleDagsplanFerdig(${i})" title="Marker ferdig">●</span>
+      ${innhold}
+      <button class="dagsplan-slett" onclick="fjernDagsplan(${i})" title="Fjern">✕</button>
+    </div>`;
+  }).join('');
+  // Fokuser og marker skrivefeltet når et punkt redigeres.
+  if (redigerDagsplanIdx !== null) {
+    const inp = liste.querySelector('.dagsplan-rediger-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }
 }
 
 // ===================== Grupper =====================
@@ -1446,6 +1566,15 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.13</div>
+    <div class="logg-dato">8. juni 2026</div>
+    <ul>
+      <li><strong>Rediger elever og dagsplan-punkter med ett klikk:</strong> klikk på et elevnavn eller en dagsplan-tekst for å rette den direkte i lista. <kbd>Enter</kbd> lagrer, <kbd>Esc</kbd> avbryter</li>
+      <li>Endrer du et elevnavn, følger det automatisk med til grupper, trekk-backlogs og gruppebegrensninger — ingenting blir hengende på det gamle navnet</li>
+      <li>I dagsplanen markerer du nå et punkt som ferdig ved å klikke på <strong>prikken</strong> (●) — teksten er reservert for redigering</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.12</div>
     <div class="logg-dato">2. juni 2026</div>
     <ul>
@@ -1657,6 +1786,7 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
+  <p><strong>Rette et navn:</strong> klikk rett på elevnavnet i lista — det blir til et lite skrivefelt. Rett opp og trykk <kbd>Enter</kbd> for å lagre, eller <kbd>Esc</kbd> for å avbryte. Endrer du navnet, oppdateres det automatisk overalt eleven er brukt — i grupper, trekk-backlogs og gruppebegrensninger. (Vil du fjerne eleven i stedet, bruk <strong>✕</strong> til høyre.)</p>
   <p>Vil du spare tid neste gang? Lagre elevlisten din under <strong>📋 Lister</strong>, og last den inn igjen med ett klikk.</p>
 
   <h4>Trekke elever</h4>
@@ -1687,7 +1817,7 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
-  <p><strong>Klikk på et punkt</strong> for å markere det som ferdig — prikken blir grønn og teksten får en strek over. Klikk på punktet igjen for å angre.</p>
+  <p>Hvert punkt har tre klikkmål: <strong>prikken</strong> (●) markerer punktet ferdig — den blir grønn og teksten får en strek over (klikk igjen for å angre). <strong>Teksten</strong> åpner redigering — klikk på den, rett opp og trykk <kbd>Enter</kbd> for å lagre eller <kbd>Esc</kbd> for å avbryte. <strong>✕</strong> fjerner punktet.</p>
 
   <h4>🖼 Bilde-widget</h4>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>

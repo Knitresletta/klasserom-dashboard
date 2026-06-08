@@ -868,6 +868,25 @@ body.kl-resizing .kl-col-resizer::before {
     flex: 1;
     font-weight: 500;
     font-size: 0.88rem;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.elev-navn:hover {
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+/* Inline-redigeringsfelt for elevnavn — fyller samme plass som navnet. */
+.elev-rediger-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.88rem;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    padding: 1px 5px;
+    outline: none;
 }
 .elev-slett {
     opacity: 0;
@@ -1028,13 +1047,27 @@ textarea[id^="notat-textarea"]:focus {
     background: var(--bg);
     border-radius: 6px;
     font-size: 0.85rem;
-    cursor: pointer;
 }
 .dagsplan-item .dagsplan-tekst {
     flex: 1;
+    cursor: pointer;
 }
 .dagsplan-prikk {
     transition: color 0.1s;
+    cursor: pointer;
+}
+/* Inline-redigeringsfelt for et dagsplan-punkt — fyller samme plass som teksten. */
+.dagsplan-rediger-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    padding: 1px 5px;
+    outline: none;
 }
 .dagsplan-item.ferdig .dagsplan-prikk {
     color: var(--green);
