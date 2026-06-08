@@ -933,16 +933,146 @@ function renderDagsplan() {
             onblur="lagreRedigerDagsplan(${i},this.value)">`
       : `<span class="dagsplan-tekst" onclick="startRedigerDagsplan(${i})" title="Klikk for å redigere">${esc(p.tekst)}</span>`;
     return `
-    <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}">
+    <div class="dagsplan-item${p.ferdig ? ' ferdig' : ''}" data-idx="${i}">
       <span class="dagsplan-prikk" onclick="toggleDagsplanFerdig(${i})" title="Marker ferdig">●</span>
       ${innhold}
       <button class="dagsplan-slett" onclick="fjernDagsplan(${i})" title="Fjern">✕</button>
+      <span class="dagsplan-handle" title="Dra for å endre rekkefølge">⠿</span>
     </div>`;
   }).join('');
   // Fokuser og marker skrivefeltet når et punkt redigeres.
   if (redigerDagsplanIdx !== null) {
     const inp = liste.querySelector('.dagsplan-rediger-input');
     if (inp) { inp.focus(); inp.select(); }
+  }
+}
+
+// Flytter et dagsplan-punkt fra indeks `fra` til indeks `til` (innsettings-punktet
+// regnet ut fra musa). Samme indeks-justering som widget-DnD-en: når vi flytter et
+// punkt framover, forskyver fjerningen alle senere indekser ett hakk ned.
+function flyttDagsplan(fra, til) {
+  const dagsplan = aktivSide().dagsplan;
+  if (fra === til || fra == null) { renderDagsplan(); return; }
+  const [punkt] = dagsplan.splice(fra, 1);
+  if (til > fra) til--;
+  dagsplan.splice(til, 0, punkt);
+  saveState();
+  renderDagsplan();
+}
+
+// Kobler dra-og-slipp for å endre rekkefølgen på dagsplan-punkter. Vi bruker IKKE
+// native HTML5-drag (drag-spøkelset rendres av nettleseren/OS og var upålitelig — det
+// fulgte ikke musa). I stedet styrer vi alt selv med Pointer Events: når man tar tak i
+// ⠿-håndtaket lager vi en flytende KOPI av raden som følger pekeren, dimmer originalen
+// på plass, og viser en blå strek der punktet havner. Lytterne kobles opp én gang fra
+// init — pointerdown er delegert på den faste containeren, move/up ligger på document
+// (med peker-fangst) så draget følges selv om pekeren forlater raden.
+function setupDagsplanDrag() {
+  const liste = document.getElementById('dagsplan-liste');
+  if (!liste) return;
+
+  let dragIdx = null;       // indeks for punktet som dras (null = ingen drag)
+  let draget = null;        // den ekte rad-noden (dimmes på plass mens kopien flyr)
+  let klone = null;         // flytende kopi som følger pekeren
+  let indikator = null;     // blå slipp-strek
+  let pekerId = null;
+  let grepX = 0, grepY = 0; // pekerens offset inni raden da man tok tak
+  let startX = 0, startY = 0;
+  let aktiv = false;        // har pekeren flyttet seg nok til at draget «teller»?
+
+  // Ta tak: bare på håndtaket, så klikk (prikk/tekst/✕) og inline-redigering er fri.
+  liste.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const handle = e.target.closest('.dagsplan-handle');
+    if (!handle) return;
+    const item = handle.closest('.dagsplan-item');
+    if (!item) return;
+    e.preventDefault();
+    const rect = item.getBoundingClientRect();
+    dragIdx = Number(item.dataset.idx);
+    draget  = item;
+    grepX = e.clientX - rect.left;
+    grepY = e.clientY - rect.top;
+    startX = e.clientX; startY = e.clientY;
+    aktiv = false;
+    pekerId = e.pointerId;
+    // Peker-fangst holder draget i gang om pekeren forlater vinduet. En bonus, ikke et
+    // krav (document-lytterne fanger resten), så vi lar det ikke velte noe om det feiler.
+    try { handle.setPointerCapture(pekerId); } catch {}
+  });
+
+  document.addEventListener('pointermove', e => {
+    if (dragIdx === null || e.pointerId !== pekerId) return;
+    // Liten terskel før draget starter — så et lite skjelv ikke flytter noe.
+    if (!aktiv) {
+      if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 4) return;
+      startDrag();
+    }
+    klone.style.left = (e.clientX - grepX) + 'px';
+    klone.style.top  = (e.clientY - grepY) + 'px';
+    plasserIndikator(e.clientY);
+  });
+
+  document.addEventListener('pointerup', e => {
+    if (dragIdx === null || e.pointerId !== pekerId) return;
+    const fra = dragIdx;
+    const til = aktiv ? dropPosisjon(e.clientY, fra) : null;
+    avslutt();
+    if (til !== null) flyttDagsplan(fra, til);
+  });
+
+  document.addEventListener('pointercancel', e => {
+    if (dragIdx === null || e.pointerId !== pekerId) return;
+    avslutt();
+  });
+
+  // Bygg den flytende kopien og dim originalen. Kjøres når terskelen er krysset.
+  // VIKTIG: klon FØR vi dimmer originalen — ellers arver kopien dimme-klassen
+  // (.dagsplan-dragging, opacity 0.45) og blir nesten usynlig.
+  function startDrag() {
+    aktiv = true;
+    const rect = draget.getBoundingClientRect();
+    klone = draget.cloneNode(true);
+    klone.classList.add('dagsplan-klone');
+    klone.classList.remove('dagsplan-dragging'); // sikring om originalen alt var dimmet
+    klone.style.width = rect.width + 'px';
+    klone.style.left  = rect.left + 'px';
+    klone.style.top   = rect.top + 'px';
+    document.body.appendChild(klone);
+    draget.classList.add('dagsplan-dragging');   // dim originalen ETTER kloning
+    document.body.style.userSelect = 'none';
+    indikator = document.createElement('div');
+    indikator.className = 'dagsplan-drop-indikator';
+  }
+
+  // Sett slipp-streken foran det første punktet pekeren er over øvre halvdel av (hopp
+  // over punktet som dras). Ingen treff → legg den nederst.
+  function plasserIndikator(clientY) {
+    const ref = [...liste.querySelectorAll('.dagsplan-item')]
+      .filter(it => Number(it.dataset.idx) !== dragIdx)
+      .find(it => { const r = it.getBoundingClientRect(); return clientY < r.top + r.height / 2; }) ?? null;
+    if (ref) liste.insertBefore(indikator, ref);
+    else liste.appendChild(indikator);
+  }
+
+  // Innsettings-indeksen ut fra pekerens y. Punktet som dras (hopp) telles ikke med.
+  function dropPosisjon(clientY, hopp) {
+    let insertAt = aktivSide().dagsplan.length;
+    for (const it of liste.querySelectorAll('.dagsplan-item')) {
+      const idx = Number(it.dataset.idx);
+      if (idx === hopp) continue;
+      const r = it.getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) { insertAt = idx; break; }
+    }
+    return insertAt;
+  }
+
+  function avslutt() {
+    if (klone) { klone.remove(); klone = null; }
+    if (indikator) { indikator.remove(); indikator = null; }
+    if (draget) { draget.classList.remove('dagsplan-dragging'); draget = null; }
+    document.body.style.userSelect = '';
+    dragIdx = null; pekerId = null; aktiv = false;
   }
 }
 
@@ -1566,6 +1696,13 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.14</div>
+    <div class="logg-dato">8. juni 2026</div>
+    <ul>
+      <li><strong>Endre rekkefølge i dagsplanen:</strong> hold inne dra-håndtaket <strong>⠿</strong> helt til høyre på et punkt (dukker opp når du holder musa over raden) og dra punktet opp eller ned. En blå strek viser hvor det havner</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.13</div>
     <div class="logg-dato">8. juni 2026</div>
     <ul>
@@ -1818,6 +1955,7 @@ const BRUKERVEILEDNING_HTML = `
   <h4>Dagsplan</h4>
   <p>Legg til punkter med <strong>+ Legg til punkt</strong> (eller <kbd>d</kbd>). Fjern enkeltpunkter med <strong>✕</strong> ved siden av hvert punkt.</p>
   <p>Hvert punkt har tre klikkmål: <strong>prikken</strong> (●) markerer punktet ferdig — den blir grønn og teksten får en strek over (klikk igjen for å angre). <strong>Teksten</strong> åpner redigering — klikk på den, rett opp og trykk <kbd>Enter</kbd> for å lagre eller <kbd>Esc</kbd> for å avbryte. <strong>✕</strong> fjerner punktet.</p>
+  <p><strong>Endre rekkefølge:</strong> hold inne dra-håndtaket <strong>⠿</strong> helt til høyre på punktet (vises når du holder musa over raden) og dra det opp eller ned. En blå strek viser hvor punktet havner når du slipper.</p>
 
   <h4>🖼 Bilde-widget</h4>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 2 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
@@ -2769,6 +2907,7 @@ function init() {
   settOppHendelser();
   settOppRename();
   settOppDragOgDrop();
+  setupDagsplanDrag();
   renderSiderNav();
   oppdaterKolonneStepper();
   oppdaterEksportVarsel();

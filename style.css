@@ -1089,6 +1089,58 @@ textarea[id^="notat-textarea"]:focus {
 .dagsplan-item:hover .dagsplan-slett {
     opacity: 1;
 }
+/* Dra-håndtak helt til høyre (etter ✕). Skjult til man holder musa over raden, samme
+   «vis ved hover»-mønster som kort-håndtaket. Draget starter på pointerdown her (se
+   setupDagsplanDrag), så klikk og redigering ellers er uforstyrret. touch-action: none
+   hindrer at et touch-drag i håndtaket ruller siden i stedet. */
+.dagsplan-handle {
+    cursor: grab;
+    color: var(--border);
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    user-select: none;
+    touch-action: none;
+    flex-shrink: 0;
+}
+.dagsplan-item:hover .dagsplan-handle {
+    opacity: 1;
+}
+.dagsplan-handle:hover {
+    color: var(--muted);
+}
+.dagsplan-handle:active {
+    cursor: grabbing;
+}
+.dagsplan-item.dagsplan-dragging {
+    opacity: 0.45;
+}
+/* Flytende kopi av raden som følger pekeren under draget. Posisjoneres i JS. */
+.dagsplan-klone {
+    position: fixed;
+    z-index: 1000;
+    box-sizing: border-box;
+    pointer-events: none;
+    background: var(--card);
+    box-shadow: var(--shadow-md);
+    border-radius: 6px;
+    opacity: 0.95;
+    cursor: grabbing;
+}
+.dagsplan-klone .dagsplan-handle {
+    opacity: 1;
+}
+/* Blå strek som viser hvor punktet havner ved slipp. Negativ margin legger den i gapet
+   mellom punktene uten å dytte dem fra hverandre. */
+.dagsplan-drop-indikator {
+    height: 3px;
+    background: var(--primary);
+    border-radius: 2px;
+    pointer-events: none;
+    margin: -2px 0;
+}
 
 /* ===================== Groups ===================== */
 #grupper-vis {
@@ -1749,6 +1801,7 @@ main.drag-active::before {
         grid-column: auto !important; /* uvirksom på flex-container (se note over) */
     }
     .drag-handle,
+    .dagsplan-handle,
     .kl-col-resizer {
         display: none;
     }
