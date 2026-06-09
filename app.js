@@ -1700,6 +1700,13 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.17</div>
+    <div class="logg-dato">9. juni 2026</div>
+    <ul>
+      <li><strong>Volum­kontroll i kun lyd-modus:</strong> YouTube-kort i <strong>🎵 Kun lyd</strong> har nå en volum­glider ved siden av play-knappen. Volumet huskes til neste gang</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.16</div>
     <div class="logg-dato">8. juni 2026</div>
     <ul>
@@ -1985,7 +1992,7 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>▶️ YouTube-widget</h4>
   <p>Legg til et YouTube-kort via <strong>⊞ Widgets</strong>-menyen og <strong>+ ▶️ YouTube</strong>. Lim inn en YouTube-lenke (vanlig lenke, <em>youtu.be</em> eller <em>Shorts</em> funker alle) og trykk <strong>Vis</strong> — videoen spilles rett i kortet.</p>
-  <p><strong>🎵 Kun lyd:</strong> bytt mellom <strong>▶ Video</strong> og <strong>🎵 Kun lyd</strong> øverst i kortet. I lyd-modus skjules bildet og du får en liten play/pause-linje — fint for bakgrunnsmusikk eller et lydklipp uten at videoen tar plass. Lyden spiller videre uavbrutt når du bytter modus. Trykk <strong>↻</strong> for å bytte til en annen lenke, og <strong>✕</strong> for å slette kortet.</p>
+  <p><strong>🎵 Kun lyd:</strong> bytt mellom <strong>▶ Video</strong> og <strong>🎵 Kun lyd</strong> øverst i kortet. I lyd-modus skjules bildet og du får en liten play/pause-linje med en <strong>volum­glider</strong> (🔊) til høyre — fint for bakgrunnsmusikk eller et lydklipp uten at videoen tar plass. Volumet du stiller inn huskes til neste gang. Lyden spiller videre uavbrutt når du bytter modus. Trykk <strong>↻</strong> for å bytte til en annen lenke, og <strong>✕</strong> for å slette kortet.</p>
   <p>Du kan ha <strong>flere YouTube-kort</strong>, og de er per side som de andre widgetene.</p>
 
   <h4>Tilpasse layouten</h4>
@@ -2919,6 +2926,10 @@ function renderYoutube(instansId) {
       <div class="youtube-lyd-panel">
         <button class="yt-spill" id="yt-spill-${instansId}" onclick="ytSpillPause('${instansId}')" title="Spill / pause">▶</button>
         <span class="yt-lyd-tittel" id="yt-tittel-${instansId}">🎵 Laster…</span>
+        <span class="yt-volum-ikon" aria-hidden="true">🔊</span>
+        <input type="range" class="yt-volum" id="yt-volum-${instansId}" min="0" max="100"
+               value="${data.volum ?? 100}" title="Volum" aria-label="Volum"
+               oninput="settYoutubeVolum('${instansId}', this.value)">
       </div>
     </div>`;
   opprettYoutubePlayer(instansId, data.videoId, data.start || 0);
@@ -2939,6 +2950,8 @@ async function opprettYoutubePlayer(instansId, videoId, start) {
       onReady: e => {
         const t = document.getElementById(`yt-tittel-${instansId}`);
         if (t) { const d = e.target.getVideoData?.(); t.textContent = '🎵 ' + (d?.title || 'YouTube'); }
+        const v = state.youtube[instansId]?.volum;
+        if (typeof v === 'number') { e.target.setVolume(v); if (v > 0) e.target.unMute?.(); }
       },
       onStateChange: e => oppdaterSpillKnapp(instansId, e.data),
     },
@@ -2970,6 +2983,16 @@ function oppdaterSpillKnapp(instansId, playerState) {
   if (b) b.textContent = playerState === 1 ? '⏸' : '▶';
 }
 
+// Volum (0–100) for lyd-modus. Lagres i state så det huskes ved reload, og settes
+// direkte på spilleren. Skrur av mute hvis brukeren drar volumet opp fra null.
+function settYoutubeVolum(instansId, verdi) {
+  const v = Math.max(0, Math.min(100, parseInt(verdi, 10) || 0));
+  const d = state.youtube[instansId];
+  if (d) { d.volum = v; saveState(); }
+  const p = ytPlayers[instansId];
+  if (p) { p.setVolume?.(v); if (v > 0) p.unMute?.(); }
+}
+
 // Leser lenke-feltet og setter videoen.
 function settYoutubeUrlFraFelt(instansId) {
   const inp = document.getElementById(`youtube-url-${instansId}`);
@@ -2983,6 +3006,7 @@ function settYoutubeUrl(instansId, url) {
     videoId,
     start: parseYoutubeStart(url),
     modus: state.youtube[instansId]?.modus || 'video',
+    volum: state.youtube[instansId]?.volum ?? 100,
   };
   saveState();
   renderYoutube(instansId);

@@ -1761,11 +1761,25 @@ main.drag-active::before {
     justify-content: center;
 }
 .yt-lyd-tittel {
+    flex: 1;
+    min-width: 0;
     font-size: 0.85rem;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.yt-volum-ikon {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+.yt-volum {
+    flex-shrink: 0;
+    width: 72px;
+    height: 4px;
+    cursor: pointer;
+    accent-color: var(--primary);
 }
 
 /* ===================== Begrensning-modal ===================== */
