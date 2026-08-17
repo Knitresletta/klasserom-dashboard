@@ -309,13 +309,20 @@ function visVærPopup() {
 }
 
 // ===================== Students =====================
+// Gjør første bokstav i hvert ord stor: «kari nordmann» → «Kari Nordmann».
+// NB: \b duger ikke her — den er ASCII-basert, så æ/ø/å teller som ordgrense og
+// «håkon» ble til «HåKon». Vi matcher derfor en bokstav som enten står først i
+// strengen eller rett etter et tegn som ikke er en bokstav (mellomrom, bindestrek,
+// apostrof) — da holder «Anne-Marie» og «O'Brien», mens «Håkon» får være i fred.
+function storForbokstav(navn) {
+  return navn.trim().replace(/(^|[^\p{L}\p{M}])(\p{L})/gu, (_, før, bokstav) => før + bokstav.toUpperCase());
+}
+
 // Legger en elev til den aktive sidens roster. Returnerer true ved suksess, false
 // hvis lista er full eller navnet allerede finnes (kaller-koden bruker det til å
 // avgjøre om modalen skal lukkes). Re-rendrer elevliste og trekk etterpå.
 function leggTilElev(navn) {
-  // Trim + gjør første bokstav i hvert ord stor (\b\p{L} = bokstav etter ordgrense,
-  // unicode-flagget u trengs for å treffe æ/ø/å). «kari nordmann» → «Kari Nordmann».
-  navn = navn.trim().replace(/\b\p{L}/gu, l => l.toUpperCase());
+  navn = storForbokstav(navn);
   if (!navn) return;
   const s = aktivSide();
   if (s.elever.length >= 35) {
@@ -454,7 +461,7 @@ function endreElevNavn(idx, nyttNavn) {
   const s = aktivSide();
   const gammelt = s.elever[idx];
   if (gammelt === undefined) { renderElever(); return; }
-  nyttNavn = nyttNavn.trim().replace(/\b\p{L}/gu, l => l.toUpperCase());
+  nyttNavn = storForbokstav(nyttNavn);
   if (!nyttNavn || nyttNavn === gammelt) { renderElever(); return; }
   if (s.elever.some((e, i) => i !== idx && e.toLowerCase() === nyttNavn.toLowerCase())) {
     notify(`${nyttNavn} er allerede inne`, 'warning');
@@ -1700,6 +1707,15 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.18</div>
+    <div class="logg-dato">17. august 2026</div>
+    <ul>
+      <li><strong>Fikset: store bokstaver midt i navn.</strong> Navn med <strong>æ, ø eller å</strong> fikk feilaktig stor bokstav rett etter — «Bjørn» ble til «BjøRn» og «Håkon» til «HåKon». Nye og redigerte navn skrives nå riktig. (Navn som allerede ligger i lista må rettes én gang: klikk på navnet, skriv det på nytt og trykk Enter)</li>
+      <li><strong>Fikset: hurtigtasten <kbd>a</kbd> skrev seg selv inn.</strong> Trykket du <kbd>a</kbd> for å legge til en elev, dukket bokstaven «a» opp i skrivefeltet som åpnet seg. Feltet er nå tomt fra start — det samme gjelder <kbd>s</kbd>, <kbd>d</kbd> og <kbd>g</kbd></li>
+      <li>Hurtigtastene utløses ikke lenger sammen med <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>/<kbd>Alt</kbd>, så nettleserens egne snarveier (som <kbd>Cmd</kbd>+<kbd>R</kbd> for å laste siden på nytt) virker som de skal</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.17</div>
     <div class="logg-dato">9. juni 2026</div>
     <ul>
@@ -1953,6 +1969,7 @@ const BRUKERVEILEDNING_HTML = `
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
   <p><strong>Rette et navn:</strong> klikk rett på elevnavnet i lista — det blir til et lite skrivefelt. Rett opp og trykk <kbd>Enter</kbd> for å lagre, eller <kbd>Esc</kbd> for å avbryte. Endrer du navnet, oppdateres det automatisk overalt eleven er brukt — i grupper, trekk-backlogs og gruppebegrensninger. (Vil du fjerne eleven i stedet, bruk <strong>✕</strong> til høyre.)</p>
+  <p><strong>Stor forbokstav kommer av seg selv:</strong> skriver du «kari nordmann», lagres det som «Kari Nordmann». Det samme gjelder etter bindestrek («Anne-Marie»), og navn med æ, ø og å behandles riktig.</p>
   <p>Vil du spare tid neste gang? Lagre elevlisten din under <strong>📋 Lister</strong>, og last den inn igjen med ett klikk.</p>
 
   <h4>Trekke elever</h4>
@@ -2035,6 +2052,7 @@ const BRUKERVEILEDNING_HTML = `
     <li><kbd>n</kbd> — Nullstill…</li>
     <li><kbd>Esc</kbd> — Lukk åpne vinduer</li>
   </ul>
+  <p>Snarveiene virker bare når du <em>ikke</em> står og skriver i et tekstfelt, og de utløses ikke sammen med <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>/<kbd>Alt</kbd>.</p>
 
   <h4>💬 Tilbakemelding & kontakt</h4>
   <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Der finner du to måter å nå utvikleren på: send en e-post til <strong>knitresletta@pm.me</strong>, eller opprett en sak (issue) på GitHub for å melde en feil eller foreslå en ny funksjon.</p>
@@ -2469,21 +2487,32 @@ function settOppHendelser() {
     const tag = document.activeElement?.tagName;
     if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
-    // Enkelt-tast → handling (uten modifikatorer). Speiler knappene i grensesnittet.
-    switch (e.key) {
-      case 'a': document.getElementById('btn-legg-til').click();        break;
-      case 'r': trekkTilfeldig();                                        break;
-      case 'R': trekkTilfeldigBacklog();                                 break;
-      case 'o': trekkOrdenselev();                                       break;
-      case 'u': trekkUlv();                                              break;
-      case 't': timerToggle();                                           break;
-      case 's': document.getElementById('btn-timer-sett').click();      break;
-      case 'd': document.getElementById('btn-dagsplan-legg-til').click();break;
-      case 'g': document.getElementById('btn-grupper-ny').click();      break;
-      case 'l': document.getElementById('btn-lister').click();          break;
-      case 'b': document.getElementById('btn-blackboard').click();      break;
-      case 'n': document.getElementById('btn-nullstill').click();       break;
-    }
+    // La nettleserens egne snarveier (Cmd/Ctrl/Alt + tast) være i fred — ellers ville
+    // f.eks. Cmd+R både trekke en elev og laste siden på nytt.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    // Enkelt-tast → handling. Speiler knappene i grensesnittet.
+    const hurtigtaster = {
+      a: () => document.getElementById('btn-legg-til').click(),
+      r: () => trekkTilfeldig(),
+      R: () => trekkTilfeldigBacklog(),
+      o: () => trekkOrdenselev(),
+      u: () => trekkUlv(),
+      t: () => timerToggle(),
+      s: () => document.getElementById('btn-timer-sett').click(),
+      d: () => document.getElementById('btn-dagsplan-legg-til').click(),
+      g: () => document.getElementById('btn-grupper-ny').click(),
+      l: () => document.getElementById('btn-lister').click(),
+      b: () => document.getElementById('btn-blackboard').click(),
+      n: () => document.getElementById('btn-nullstill').click(),
+    };
+    const handling = hurtigtaster[e.key];
+    if (!handling) return;
+    // Må stoppe standardoppførselen FØR handlingen: flere av snarveiene åpner en modal
+    // og fokuserer et tekstfelt, og uten dette ville tasten («a») bli skrevet inn i
+    // feltet den nettopp åpnet.
+    e.preventDefault();
+    handling();
   });
 }
 
