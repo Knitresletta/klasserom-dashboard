@@ -153,6 +153,15 @@
               <button class="str-knapp widget-str-valg" data-widget="card-dagsplan" data-størrelse="xl">XL</button>
             </div>
           </div>
+          <div class="widget-str-rad" data-widget="card-klokke">
+            <span>Klokke</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-klokke" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-klokke" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-klokke" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-klokke" data-størrelse="xl">XL</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -286,6 +295,48 @@
     </div>
     <div id="dagsplan-liste"></div>
     <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
+  </div>
+
+  <!-- Card: Klokke — analog urskive + digital tid, med vær og pollen under.
+       Urskiven er statisk SVG; strekene og tallene tegnes én gang av setupKlokke(),
+       og de tre viserne roteres av oppdaterKlokke() hvert sekund. Værblokka fylles
+       av renderVær() med de samme dataene som headeren bruker — ingen ekstra kall. -->
+  <div class="card" id="card-klokke">
+    <button class="kl-widget-close" onclick="toggleWidgetSynlighet('card-klokke', false)" title="Fjern fra siden">✕</button>
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>🕐 Klokke</h2>
+    </div>
+
+    <div class="klokke-urskive">
+      <svg viewBox="0 0 100 100" role="img" aria-label="Analog klokke">
+        <circle class="klokke-skive" cx="50" cy="50" r="47" />
+        <g id="klokke-merker"></g>
+        <g id="klokke-tall"></g>
+        <line id="klokke-viser-time"   class="klokke-viser klokke-viser-time"   x1="50" y1="57" x2="50" y2="29" />
+        <line id="klokke-viser-minutt" class="klokke-viser klokke-viser-minutt" x1="50" y1="59" x2="50" y2="17" />
+        <line id="klokke-viser-sekund" class="klokke-viser-sekund"              x1="50" y1="61" x2="50" y2="14" />
+        <circle class="klokke-nav" cx="50" cy="50" r="2.4" />
+      </svg>
+    </div>
+    <div id="klokke-digital">--:--</div>
+
+    <!-- Værblokk: hovedlinje (emoji + temperatur), tre detaljrader og stedsvelger -->
+    <div class="klokke-vaer">
+      <div class="klokke-vaer-hoved">
+        <span id="klokke-vaer-emoji">⏳</span>
+        <span id="klokke-vaer-temp">–</span>
+      </div>
+      <div class="klokke-vaer-rad"><span>💨 Vind</span><strong id="klokke-vaer-vind">–</strong></div>
+      <div class="klokke-vaer-rad"><span>🌧 Nedbør (6 t)</span><strong id="klokke-vaer-nedbor">–</strong></div>
+      <div class="klokke-vaer-rad"><span>🌿 Pollen</span><strong id="klokke-vaer-pollen">–</strong></div>
+
+      <button id="klokke-sted" class="klokke-sted" title="Klikk for å bytte sted">📍 Eidsvoll</button>
+      <div id="klokke-sted-sok" class="klokke-sted-sok hidden">
+        <input type="text" id="input-klokke-sted" placeholder="Søk etter sted…" autocomplete="off">
+        <div id="klokke-sted-treff" class="klokke-sted-treff"></div>
+      </div>
+    </div>
   </div>
 
 </main>

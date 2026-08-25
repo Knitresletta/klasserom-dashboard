@@ -30,11 +30,34 @@ const WIDGET_NAVN = {
   'card-ulv':        'Klassebamse',
   'card-timer':      '⏱ Timer',
   'card-dagsplan':   '📋 Dagsplan',
+  'card-klokke':     '🕐 Klokke',
 };
 
-// Koordinater for værvarselet (Eidsvoll). Brukes i kallet til met.no.
-const VÆR_LAT = 60.33;
-const VÆR_LON = 11.22;
+// Standardsted for værvarselet. Brukeren kan bytte sted i klokke-kortet; valget
+// lagres i state.vær_sted og deles av headeren og kortet. Koordinatene holdes på
+// maks 4 desimaler — se rundKoordinat().
+const STANDARD_VÆR_STED = { navn: 'Eidsvoll', lat: 60.33, lon: 11.22 };
+
+// MERK: ikke sett en egen User-Agent på met.no-kallet, selv om API-dokumentasjonen
+// ber om det. Den regelen gjelder programmer som snakker med API-et direkte — en
+// nettleser sender uansett sin egen User-Agent, og den godtar met.no.
+//
+// Setter vi headeren selv, blir kallet «ikke-enkelt» etter CORS-reglene, og nettleseren
+// må først sende en preflight (OPTIONS). Den svarer met.no på uten CORS-hoder i det
+// hele tatt, så hele kallet blokkeres. Chrome skjuler problemet ved å droppe headeren
+// stille; Firefox og Zen sender den — og der forsvant værvarselet helt. Se v2.19.
+
+// Pollenartene vi henter fra Open-Meteo (CAMS-varselet for Europa), med norske navn
+// og terskler i korn/m³ på formen [moderat, høyt]. Artene har ulik skala — burot
+// merkes ved langt lavere konsentrasjon enn bjørk, som kan ligge i hundretall i mai.
+const POLLEN_ARTER = [
+  { felt: 'alder_pollen',   navn: 'Or',    grenser: [10, 50] },
+  { felt: 'birch_pollen',   navn: 'Bjørk', grenser: [15, 90] },
+  { felt: 'grass_pollen',   navn: 'Gress', grenser: [10, 50] },
+  { felt: 'mugwort_pollen', navn: 'Burot', grenser: [5,  25] },
+];
+// Indeks 0 brukes ikke i teksten (da skriver vi «Lite pollen» i stedet).
+const POLLEN_NIVÅER = ['ingen', 'lavt', 'moderat', 'høyt'];
 
 // Oversetter en yr.no-symbolkode (f.eks. "clearsky_day") til en passende emoji.
 // Sjekkene går fra mest til minst spesifikk; ukjente koder faller tilbake til ☁️.
@@ -68,6 +91,7 @@ function defaultState() {
     font: 'system',
     skrift_størrelse: 'normal',
     widget_størrelser: {},
+    vær_sted:            { ...STANDARD_VÆR_STED }, // sted for vær + pollen (delt av alle sider)
     notater:      { 'notat-1': { tekst: '', kursiv: false } },
     bilder:       { 'bilde-1': {} }, // register over bildekort; selve bildene bor i IndexedDB
     youtube:      {},                // ingen YouTube-kort som standard; legges til via «+»
@@ -102,6 +126,7 @@ function nySide(navn) {
     widget_layout: [
       { id: 'card-elever',     col: 1 },
       { id: 'card-grupper',    col: 1 },
+      { id: 'card-klokke',     col: 2 },
       { id: 'card-tilfeldig',  col: 2 },
       { id: 'card-ordenselev', col: 2 },
       { id: 'card-ulv',        col: 2 },
@@ -124,7 +149,9 @@ function standardBredder(n) {
 // Den ene, sentrale tilstanden hele appen leser og skriver. Lastes fra localStorage
 // (eller defaults) ved oppstart, og persisteres med saveState() etter hver endring.
 let state = loadState();
-let værData = null; // siste værsvar fra met.no, delt mellom topptekst og popup
+let værData = null;    // siste værsvar fra met.no, delt mellom topptekst, popup og klokkekort
+let pollenData = null; // siste pollensvar fra Open-Meteo, brukt av klokkekortet
+let stedsTreff = [];   // siste geokodingstreff, slik at klikk kan slå opp på indeks
 
 // Timer runtime state (not persisted)
 let timerRemaining = state.timer_varighet;
@@ -220,6 +247,13 @@ function loadState() {
           typeof p === 'string' ? { tekst: p, ferdig: false } : p
         );
       }
+      // Vær-sted (v2.19). Eldre states mangler feltet helt — da har Object.assign
+      // allerede gitt oss standardstedet. Vi sjekker likevel at koordinatene er tall,
+      // så et halvskrevet eller manuelt redigert felt ikke sender ugyldige kall til met.no.
+      const vs = state.vær_sted;
+      if (!vs || !vs.navn || typeof vs.lat !== 'number' || typeof vs.lon !== 'number') {
+        state.vær_sted = { ...STANDARD_VÆR_STED };
+      }
       return state;
     }
   } catch (e) {
@@ -258,21 +292,102 @@ function oppdaterDato() {
   document.getElementById('header-dato').textContent = norskDato();
 }
 
-// Henter værvarsel for Eidsvoll fra met.no sitt åpne API og viser temperatur +
-// emoji i toppteksten. Svaret lagres i `værData` så vær-popupen kan gjenbruke det.
-// met.no krever en identifiserende User-Agent. Feil svelges stille (vær er pynt).
+// Runder av en koordinat til 4 desimaler. met.no avviser kall med flere desimaler
+// (de vil unngå unødvendig cache-spredning), og geokodingen gir gjerne 5.
+function rundKoordinat(n) {
+  return Math.round(n * 10000) / 10000;
+}
+
+// Stedet vær og pollen hentes for. Faller tilbake til standardstedet hvis det lagrede
+// feltet skulle mangle eller være ødelagt, så et kall aldri sendes uten koordinater.
+function værSted() {
+  const s = state.vær_sted;
+  return (s && typeof s.lat === 'number' && typeof s.lon === 'number') ? s : STANDARD_VÆR_STED;
+}
+
+// Liten fetch-innpakning: kaster ved HTTP-feil, ellers gir den ferdig parset JSON.
+// Sender bevisst ingen egne headere — se merknaden over MET-kallet om CORS-preflight.
+async function hentJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${url}`);
+  return res.json();
+}
+
+// Henter værvarsel (met.no) og pollenvarsel (Open-Meteo) for det valgte stedet, og
+// tegner resultatet i både toppteksten og klokke-kortet. Kjøres ved oppstart, hvert
+// tiende minutt, og når brukeren bytter sted.
+// De to kallene går parallelt og uavhengig av hverandre: allSettled gjør at et
+// mislykket pollenkall ikke tar med seg været i fallet. Feil svelges stille — vær er
+// pynt, ikke kjernefunksjon, og dashbordet skal ikke bråke om nettet er nede.
 async function hentVær() {
-  try {
-    const res = await fetch(
-      `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${VÆR_LAT}&lon=${VÆR_LON}`,
-      { headers: { 'User-Agent': 'klasserom-dashboard/1.0 github.com/Knitresletta/klasserom-dashboard kanadurr@gmail.com' } }
-    );
-    værData = await res.json();
-    const nå    = værData.properties.timeseries[0];
-    const temp  = Math.round(nå.data.instant.details.air_temperature);
-    const emoji = yrEmoji(nå.data.next_1_hours?.summary.symbol_code ?? 'cloudy');
-    document.getElementById('header-ver').textContent = `${emoji} ${temp}°C  Eidsvoll`;
-  } catch (_) {}
+  const sted = værSted();
+  const pollenfelt = POLLEN_ARTER.map(a => a.felt).join(',');
+  const [vær, pollen] = await Promise.allSettled([
+    hentJson(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${sted.lat}&lon=${sted.lon}`),
+    hentJson(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${sted.lat}&longitude=${sted.lon}&current=${pollenfelt}&timezone=auto`),
+  ]);
+  værData    = vær.status    === 'fulfilled' ? vær.value    : null;
+  pollenData = pollen.status === 'fulfilled' ? pollen.value : null;
+  renderVær();
+}
+
+// Finner arten med høyest nivå i pollensvaret og beskriver den på norsk, f.eks.
+// «Bjørk – høyt». Returnerer null hvis vi ikke har tall for noen art (utenfor
+// sesongen kan feltene mangle helt), og «Lavt» når alt ligger i bunn.
+function pollenSammendrag() {
+  const nå = pollenData?.current;
+  if (!nå) return null;
+
+  let verst = null;
+  for (const art of POLLEN_ARTER) {
+    const verdi = nå[art.felt];
+    if (typeof verdi !== 'number') continue;
+    const nivå = verdi >= art.grenser[1] ? 3
+               : verdi >= art.grenser[0] ? 2
+               : verdi > 1               ? 1 : 0;
+    if (!verst || nivå > verst.nivå) verst = { navn: art.navn, nivå };
+  }
+  if (!verst) return null;
+  return verst.nivå === 0 ? 'Lavt' : `${verst.navn} – ${POLLEN_NIVÅER[verst.nivå]}`;
+}
+
+// Tegner de hentede dataene der de skal vises: kompakt i toppteksten, og med vind,
+// nedbør og pollen i klokke-kortet. Skiller seg fra hentVær() ved at den ikke gjør
+// nettverkskall — den kan derfor kalles fritt når kortet nettopp er tegnet på nytt.
+function renderVær() {
+  const sted = værSted();
+  const d    = værData?.properties?.timeseries?.[0]?.data;
+
+  const emoji = d ? yrEmoji(d.next_1_hours?.summary.symbol_code ?? 'cloudy') : '';
+  const temp  = d ? Math.round(d.instant.details.air_temperature) : null;
+
+  const header = document.getElementById('header-ver');
+  if (header) header.textContent = d ? `${emoji} ${temp}°C  ${sted.navn}` : '';
+
+  // Kortet kan være slått av for denne siden — da finnes ikke elementene, og vi
+  // lar det ligge. Neste henting (eller sidebytte) tegner dem på nytt.
+  if (!document.getElementById('klokke-digital')) return;
+  const sett = (id, verdi) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = verdi;
+  };
+
+  sett('klokke-vaer-emoji', d ? emoji : '⏳');
+  sett('klokke-vaer-temp',  d ? `${temp}°C` : '–');
+  sett('klokke-vaer-vind',  d ? `${Math.round(d.instant.details.wind_speed)} m/s` : '–');
+
+  // Nedbøren met.no selv har summert for de neste seks timene. Mer treffsikker enn å
+  // legge sammen timesverdiene på egen hånd, og den er allerede med i compact-svaret.
+  const nedbør = d?.next_6_hours?.details?.precipitation_amount;
+  sett('klokke-vaer-nedbor',
+       typeof nedbør === 'number' ? `${nedbør.toFixed(1).replace('.', ',')} mm` : '–');
+
+  const pollen = pollenSammendrag();
+  sett('klokke-vaer-pollen', pollen ?? '–');
+  document.getElementById('klokke-vaer-pollen')
+    ?.classList.toggle('pollen-hoyt', !!pollen && pollen.endsWith('høyt'));
+
+  sett('klokke-sted', `📍 ${sted.navn}`);
 }
 
 // Bygger og åpner/lukker vær-popupen: nåværende forhold pluss de neste 8 timene.
@@ -306,6 +421,136 @@ function visVærPopup() {
         </div>`).join('')}
     </div>`;
   document.getElementById('vær-popup').classList.toggle('hidden');
+}
+
+// ===================== Klokke =====================
+// Tegner strekene og tallene på urskiven. Kjøres én gang ved oppstart — merkene står
+// stille, det er bare viserne som beveger seg. 60 minuttstreker, der hver femte er
+// lengre og tykkere (timemarkering), pluss tallene 1–12.
+function setupKlokke() {
+  const merker = document.getElementById('klokke-merker');
+  const tall   = document.getElementById('klokke-tall');
+  if (!merker || !tall) return;
+
+  // Regner om «grader rundt urskiven» til x/y i SVG-ens koordinatsystem (0–100 med
+  // sentrum i 50,50). Minus 90 grader fordi 0° skal peke rett opp, ikke mot høyre.
+  const punkt = (grader, radius) => {
+    const rad = (grader - 90) * Math.PI / 180;
+    return [50 + radius * Math.cos(rad), 50 + radius * Math.sin(rad)];
+  };
+
+  merker.innerHTML = Array.from({ length: 60 }, (_, i) => {
+    const erTime = i % 5 === 0;
+    const [x1, y1] = punkt(i * 6, erTime ? 38.5 : 42);
+    const [x2, y2] = punkt(i * 6, 45);
+    return `<line class="klokke-merke${erTime ? ' time' : ''}" x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`;
+  }).join('');
+
+  tall.innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const [x, y] = punkt((i + 1) * 30, 30);
+    return `<text class="klokke-tall" x="${x.toFixed(2)}" y="${y.toFixed(2)}">${i + 1}</text>`;
+  }).join('');
+}
+
+// Setter de tre viserne og den digitale tiden. Kjøres hvert sekund fra init().
+// Time- og minuttviseren beveger seg jevnt (minutter og sekunder regnes inn i
+// vinkelen), slik at klokka viser riktig også mellom hele minutter — en timeviser
+// som står bom på 9 når klokka er 09:55 er nettopp det elevene lærer å lese feil.
+function oppdaterKlokke() {
+  const d = new Date();
+  const t = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+
+  const digital = document.getElementById('klokke-digital');
+  if (!digital) return; // kortet er slått av for denne siden
+  digital.textContent = `${String(t).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+  settViser('klokke-viser-time',   (t % 12) * 30 + m * 0.5);
+  settViser('klokke-viser-minutt', m * 6 + s * 0.1);
+  settViser('klokke-viser-sekund', s * 6);
+}
+
+// Roterer én viser til gitt vinkel (grader fra klokka 12) rundt urskivens sentrum.
+function settViser(id, grader) {
+  const el = document.getElementById(id);
+  if (el) el.setAttribute('transform', `rotate(${grader} 50 50)`);
+}
+
+// ===================== Sted for vær og pollen =====================
+// Kobler opp stedsvelgeren i klokke-kortet: knappen åpner søkefeltet, Enter søker,
+// Escape lukker. Kjøres én gang fra settOppHendelser().
+function settOppStedsvelger() {
+  const knapp = document.getElementById('klokke-sted');
+  const boks  = document.getElementById('klokke-sted-sok');
+  const input = document.getElementById('input-klokke-sted');
+  if (!knapp || !boks || !input) return;
+
+  knapp.onclick = e => {
+    e.stopPropagation();
+    boks.classList.toggle('hidden');
+    if (!boks.classList.contains('hidden')) {
+      input.value = '';
+      document.getElementById('klokke-sted-treff').innerHTML = '';
+      input.focus();
+    }
+  };
+  // Klikk inne i søkeboksen skal ikke boble opp til dokument-lytteren, som lukker
+  // alle nedtrekk — ellers ville feltet lukke seg i det man klikket i det.
+  boks.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  søkSted();
+    if (e.key === 'Escape') boks.classList.add('hidden');
+  });
+}
+
+// Slår opp stedsnavnet brukeren skrev inn via Open-Meteo sitt åpne geokodings-API
+// (ingen nøkkel) og lister treffene som klikkbare rader. Treffene mellomlagres i
+// `stedsTreff` og radene refererer til dem med indeks — da slipper vi å bake
+// stedsnavn inn i onclick-attributter, der en apostrof ville brutt markupen.
+async function søkSted() {
+  const navn  = document.getElementById('input-klokke-sted').value.trim();
+  const treff = document.getElementById('klokke-sted-treff');
+  if (!navn) return;
+
+  treff.innerHTML = '<div class="klokke-sted-tom">Søker…</div>';
+  try {
+    const data = await hentJson(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(navn)}&count=6&language=no&format=json`
+    );
+    stedsTreff = data.results ?? [];
+    if (!stedsTreff.length) {
+      treff.innerHTML = '<div class="klokke-sted-tom">Fant ingen steder med det navnet</div>';
+      return;
+    }
+    treff.innerHTML = stedsTreff.map((r, i) => {
+      // Fylke og land som undertekst, så «Eidsvoll» i Akershus er lett å skille fra
+      // et likelydende sted i utlandet.
+      const under = [r.admin1, r.country].filter(Boolean).join(', ');
+      return `<button class="klokke-sted-treff-rad" data-i="${i}">
+                <strong>${esc(r.name)}</strong><span>${esc(under)}</span>
+              </button>`;
+    }).join('');
+    treff.querySelectorAll('.klokke-sted-treff-rad').forEach(btn => {
+      btn.onclick = () => velgSted(stedsTreff[Number(btn.dataset.i)]);
+    });
+  } catch (_) {
+    treff.innerHTML = '<div class="klokke-sted-tom">Søket feilet — sjekk nettforbindelsen</div>';
+  }
+}
+
+// Lagrer det valgte stedet (globalt, delt av alle sider), lukker søket og henter vær
+// og pollen på nytt med de nye koordinatene.
+function velgSted(r) {
+  if (!r) return;
+  state.vær_sted = {
+    navn: r.name,
+    lat:  rundKoordinat(r.latitude),
+    lon:  rundKoordinat(r.longitude),
+  };
+  saveState();
+  document.getElementById('klokke-sted-sok').classList.add('hidden');
+  document.getElementById('klokke-sted').textContent = `📍 ${state.vær_sted.navn}`;
+  notify(`Værvarsel hentes nå for ${state.vær_sted.navn}`);
+  hentVær();
 }
 
 // ===================== Students =====================
@@ -1707,6 +1952,17 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
   <div class="logg-entry">
+    <div class="logg-versjon">v2.19</div>
+    <div class="logg-dato">25. august 2026</div>
+    <ul>
+      <li><strong>Ny klokke-widget:</strong> en <strong>analog urskive</strong> med tallene 1–12, og den digitale tiden rett under. Fin å ha framme for klasser som øver på å lese klokka. Hent den fram via <strong>⊞ Widgets → 🕐 Klokke</strong></li>
+      <li><strong>Vær under klokka:</strong> temperatur, <strong>vind</strong> og <strong>nedbør for de neste 6 timene</strong> — alt du trenger for å avgjøre om det blir uteskole eller innefri</li>
+      <li><strong>Pollenvarsel:</strong> kortet viser hvilken pollentype som er høyest akkurat nå (or, bjørk, gress eller burot) og hvor kraftig det er. Er nivået <strong>høyt</strong>, lyser teksten rødt</li>
+      <li><strong>Fikset: været virker nå i Firefox og Zen.</strong> Værvarselet i toppen har aldri lastet i disse nettleserne — appen ba met.no om dataene på en måte som Firefox blokkerte av sikkerhetsgrunner, mens Chrome og Brave lot den passere. Nå henter alle nettlesere været likt, også når du åpner fila rett fra maskinen</li>
+      <li><strong>Velg ditt eget sted:</strong> klikk på stedsnavnet nederst i klokke-kortet, søk opp stedet ditt og velg det fra lista. Både klokke-kortet og været i toppen følger valget, og det huskes til neste gang</li>
+    </ul>
+  </div>
+  <div class="logg-entry">
     <div class="logg-versjon">v2.18</div>
     <div class="logg-dato">17. august 2026</div>
     <ul>
@@ -1990,6 +2246,12 @@ const BRUKERVEILEDNING_HTML = `
 
   <h4>⛔ Gruppebegrensning</h4>
   <p>Klikk <strong>⛔ Par</strong> i Grupper-kortets hjørne for å åpne begrensningslisten. Velg to elever fra nedtrekksmenyene og klikk <strong>Legg til</strong>. Paret vil aldri havne i samme gruppe. Du kan legge til så mange par du vil. Fjern et par ved å klikke <strong>✕</strong> ved siden av det.</p>
+
+  <h4>🕐 Klokke</h4>
+  <p>Viser en <strong>analog urskive</strong> med tallene 1–12 og tre visere, og den <strong>digitale tiden</strong> rett under. Time- og minuttviseren glir jevnt slik ekte klokker gjør — er den 09:55, står timeviseren nesten på 10, ikke rett på 9. Det gjør kortet trygt å bruke når klassen øver på å lese klokka.</p>
+  <p>Under klokka står <strong>været</strong>: vind, hvor mye nedbør som er ventet de neste 6 timene, og et <strong>pollenvarsel</strong> som viser hvilken pollentype som er høyest nå (or, bjørk, gress eller burot). Er pollennivået høyt, blir teksten rød — nyttig å oppdage før friminuttet hvis du har allergikere i klassen.</p>
+  <p><strong>Bytte sted:</strong> klikk på stedsnavnet nederst i kortet (📍), skriv inn stedet ditt og trykk <kbd>Enter</kbd>. Velg riktig treff fra lista — fylke og land står under hvert navn, så du ikke havner i feil land. Været i toppen av siden følger samme sted, og valget huskes til neste gang. Standard er Eidsvoll.</p>
+  <p>Er nettet nede eller været ikke lastet ennå, står det bare streker i værfeltene. Klokka går som normalt uansett — den henter tiden fra maskinen din, ikke fra nettet.</p>
 
   <h4>Timer</h4>
   <p>Standard er 5 minutter. Trykk <strong>Sett tid</strong> (eller <kbd>s</kbd>) for å velge en annen varighet (1–60 min). Start og stopp med <strong>▶ Start</strong> (eller <kbd>t</kbd>). En lyd spilles av når tiden er ute.</p>
@@ -2455,11 +2717,15 @@ function settOppHendelser() {
   };
   document.getElementById('vær-popup').addEventListener('click', e => e.stopPropagation());
 
+  // Stedsvelger i klokke-kortet
+  settOppStedsvelger();
+
   // Lukk alle dropdowns ved klikk utenfor
   document.addEventListener('click', () => {
     widgetDropdown.classList.add('hidden');
     klasseromDrop.classList.add('hidden');
     document.getElementById('vær-popup').classList.add('hidden');
+    document.getElementById('klokke-sted-sok')?.classList.add('hidden');
   });
 
   // Lukk modal ved klikk på overlay
@@ -3344,9 +3610,12 @@ async function bekreftImport() {
 // hendelser og dra-og-slipp, og setter i gang dato-/vær-oppdatering på timer.
 function init() {
   oppdaterDato();
+  setupKlokke();
+  oppdaterKlokke();
   hentVær();
-  setInterval(oppdaterDato, 60_000);
-  setInterval(hentVær,      600_000);
+  setInterval(oppdaterDato,   60_000);
+  setInterval(oppdaterKlokke,  1_000);
+  setInterval(hentVær,       600_000);
 
   renderElever();
   renderAlleTrekk();

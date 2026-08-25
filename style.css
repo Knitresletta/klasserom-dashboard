@@ -1782,6 +1782,188 @@ main.drag-active::before {
     accent-color: var(--primary);
 }
 
+/* ===================== Klokke-widget ===================== */
+/* Urskiven er SVG i et kvadratisk felt som skalerer med kortbredden. Alle farger
+   hentes fra temavariablene, så klokka følger temaet uten egne regler per tema.
+   Koordinatene i SVG-en er i viewBox-enheter (0–100), ikke piksler — derfor er
+   strektykkelser og skriftstørrelser her små tall. */
+#card-klokke .klokke-urskive {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0 2px;
+}
+#card-klokke .klokke-urskive svg {
+    width: 100%;
+    max-width: 190px;
+    height: auto;
+}
+.klokke-skive {
+    fill: var(--card);
+    stroke: var(--border);
+    stroke-width: 2;
+}
+.klokke-merke {
+    stroke: var(--muted);
+    stroke-width: 0.7;
+    stroke-linecap: round;
+}
+.klokke-merke.time {
+    stroke: var(--text);
+    stroke-width: 1.7;
+}
+.klokke-tall {
+    fill: var(--text);
+    font-size: 9px;
+    font-weight: 600;
+    text-anchor: middle;
+    dominant-baseline: central;
+}
+.klokke-viser {
+    stroke: var(--text);
+    stroke-linecap: round;
+}
+.klokke-viser-time {
+    stroke-width: 4;
+}
+.klokke-viser-minutt {
+    stroke-width: 2.5;
+}
+/* Sekundviseren er tynn og i aksentfargen, så den leses som «det som beveger seg»
+   uten å konkurrere med time- og minuttviseren. */
+.klokke-viser-sekund {
+    stroke: var(--pink);
+    stroke-width: 1.1;
+    stroke-linecap: round;
+}
+.klokke-nav {
+    fill: var(--pink);
+}
+#klokke-digital {
+    font-size: 2.1rem;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary);
+    line-height: 1;
+    padding: 2px 0 10px;
+}
+
+/* Værblokka under klokka: én stor linje med emoji + temperatur, så detaljradene. */
+.klokke-vaer {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.klokke-vaer-hoved {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 2px;
+}
+/* Radene sentreres og har makshøyde-bredde, slik at etikett og verdi holder seg
+   nær hverandre også når kortet ligger i en bred kolonne. */
+.klokke-vaer-rad {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    max-width: 250px;
+    align-self: center;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+.klokke-vaer-rad strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+/* Markerer høy pollenkonsentrasjon — det er den ene verdien en allergiker
+   trenger å oppdage uten å lese hele kortet. */
+#klokke-vaer-pollen.pollen-hoyt {
+    color: var(--red);
+}
+
+/* Stedsvelger: knappen viser gjeldende sted, klikk åpner søkefeltet under. */
+.klokke-sted {
+    margin-top: 6px;
+    align-self: center;
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-sm);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.klokke-sted:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.klokke-sted-sok {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+.klokke-sted-sok input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+}
+.klokke-sted-sok input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.klokke-sted-treff {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 170px;
+    overflow-y: auto;
+}
+.klokke-sted-treff-rad {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    background: none;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 5px 7px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--text);
+}
+.klokke-sted-treff-rad:hover {
+    background: var(--primary-l);
+}
+.klokke-sted-treff-rad strong {
+    font-size: 0.88rem;
+}
+.klokke-sted-treff-rad span {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+.klokke-sted-tom {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 4px 2px;
+}
+
 /* ===================== Begrensning-modal ===================== */
 .modal-boks {
     background: var(--card);
