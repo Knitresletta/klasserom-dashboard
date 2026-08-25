@@ -462,6 +462,107 @@ header h1 {
     color: #3b82f6;
     font-size: 0.7rem;
 }
+/* Toppen av vær-popupen: stedsnavn og hvor stedet kom fra. */
+.vær-sted-topp {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.vær-sted-navn {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+.vær-sted-kilde {
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+/* Symbol + temperatur stort, så tallet leses før detaljradene. */
+.vær-hoved {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.vær-rad strong {
+    font-variant-numeric: tabular-nums;
+}
+/* Markerer høy pollenkonsentrasjon — den ene verdien en allergiker må oppdage raskt. */
+.vær-rad strong.pollen-hoyt {
+    color: var(--red);
+}
+.vær-tom {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 6px 0 12px;
+}
+
+/* Stedskontroller nederst i popupen: posisjonsknapp + søk. */
+.vær-sted-verktøy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+.vær-sted-verktøy input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+}
+.vær-sted-verktøy input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.vær-sted-treff {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 170px;
+    overflow-y: auto;
+}
+.vær-sted-treff-rad {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    background: none;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 5px 7px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--text);
+}
+.vær-sted-treff-rad:hover {
+    background: var(--primary-l);
+}
+.vær-sted-treff-rad strong {
+    font-size: 0.88rem;
+}
+.vær-sted-treff-rad span {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+.vær-sted-tom {
+    font-size: 0.8rem;
+    color: var(--muted);
+    padding: 4px 2px;
+}
+
 #klasserom-dropdown {
     position: absolute;
     top: calc(100% + 8px);
@@ -1782,6 +1883,132 @@ main.drag-active::before {
     accent-color: var(--primary);
 }
 
+/* ===================== Terning-widget ===================== */
+/* Terningflatene er SVG i et 100×100-rutenett. Størrelsen styres av --terning-str,
+   som JS setter etter hvor mange terninger som ligger på bordet. */
+#terning-flater {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    min-height: 70px;
+}
+.terning-flate {
+    display: block;
+    width: var(--terning-str, 84px);
+    max-width: 100%;
+}
+.terning-flate svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+.terning-kropp {
+    fill: var(--primary-l);
+    stroke: var(--primary);
+    stroke-width: 4;
+    stroke-linejoin: round;
+}
+/* Den indre trekanten på d20 — antyder fasettene uten å tegne alle tjue. */
+.terning-innerlinje {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+    opacity: 0.28; /* svak nok til at tosifrede tall (20) leses rent oppå den */
+}
+.terning-prikk {
+    fill: var(--text);
+}
+.terning-tall {
+    fill: var(--text);
+    font-size: 38px;
+    font-weight: 800;
+    text-anchor: middle;
+    dominant-baseline: central;
+}
+
+/* Vrikket mens kastet ruller. Kort og lav amplitude — det skal antyde bevegelse,
+   ikke rope. Respekterer «reduser bevegelse» via media-spørringen nederst. */
+#terning-flater.ruller .terning-flate {
+    animation: terning-trill 0.12s linear infinite;
+}
+@keyframes terning-trill {
+    0%   { transform: rotate(-7deg) translateY(0); }
+    50%  { transform: rotate(6deg) translateY(-3px); }
+    100% { transform: rotate(-7deg) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    #terning-flater.ruller .terning-flate {
+        animation: none;
+    }
+}
+
+.terning-sum {
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-height: 1.2em;
+}
+
+/* Knapperad for terningtype (d4…d20). */
+.terning-type {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+}
+.terning-type-knapp {
+    flex: 1 1 auto;
+    min-width: 42px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--card);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background 0.12s,
+        color 0.12s,
+        border-color 0.12s;
+}
+.terning-type-knapp:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.terning-type-knapp.aktiv {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.terning-kontroller {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.terning-antall {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+}
+#terning-antall-tall {
+    min-width: 1.2em;
+    text-align: center;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
 /* ===================== Klokke-widget ===================== */
 /* Urskiven er SVG i et kvadratisk felt som skalerer med kortbredden. Alle farger
    hentes fra temavariablene, så klokka følger temaet uten egne regler per tema.
@@ -1846,122 +2073,6 @@ main.drag-active::before {
     color: var(--primary);
     line-height: 1;
     padding: 2px 0 10px;
-}
-
-/* Værblokka under klokka: én stor linje med emoji + temperatur, så detaljradene. */
-.klokke-vaer {
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-.klokke-vaer-hoved {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 1.45rem;
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 2px;
-}
-/* Radene sentreres og har makshøyde-bredde, slik at etikett og verdi holder seg
-   nær hverandre også når kortet ligger i en bred kolonne. */
-.klokke-vaer-rad {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-    max-width: 250px;
-    align-self: center;
-    font-size: 0.85rem;
-    color: var(--muted);
-}
-.klokke-vaer-rad strong {
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-/* Markerer høy pollenkonsentrasjon — det er den ene verdien en allergiker
-   trenger å oppdage uten å lese hele kortet. */
-#klokke-vaer-pollen.pollen-hoyt {
-    color: var(--red);
-}
-
-/* Stedsvelger: knappen viser gjeldende sted, klikk åpner søkefeltet under. */
-.klokke-sted {
-    margin-top: 6px;
-    align-self: center;
-    background: none;
-    border: 1px dashed var(--border);
-    border-radius: var(--r-sm);
-    color: var(--muted);
-    font: inherit;
-    font-size: 0.8rem;
-    padding: 4px 8px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-}
-.klokke-sted:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-.klokke-sted-sok {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 4px;
-}
-.klokke-sted-sok input {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-sm);
-    background: var(--card);
-    color: var(--text);
-    font: inherit;
-    font-size: 0.85rem;
-}
-.klokke-sted-sok input:focus {
-    outline: none;
-    border-color: var(--primary);
-}
-.klokke-sted-treff {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 170px;
-    overflow-y: auto;
-}
-.klokke-sted-treff-rad {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
-    background: none;
-    border: none;
-    border-radius: var(--r-sm);
-    padding: 5px 7px;
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    color: var(--text);
-}
-.klokke-sted-treff-rad:hover {
-    background: var(--primary-l);
-}
-.klokke-sted-treff-rad strong {
-    font-size: 0.88rem;
-}
-.klokke-sted-treff-rad span {
-    font-size: 0.75rem;
-    color: var(--muted);
-}
-.klokke-sted-tom {
-    font-size: 0.8rem;
-    color: var(--muted);
-    padding: 4px 2px;
 }
 
 /* ===================== Begrensning-modal ===================== */

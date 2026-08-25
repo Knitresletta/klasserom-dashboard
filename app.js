@@ -31,12 +31,44 @@ const WIDGET_NAVN = {
   'card-timer':      '⏱ Timer',
   'card-dagsplan':   '📋 Dagsplan',
   'card-klokke':     '🕐 Klokke',
+  'card-terning':    '🎲 Terning',
+};
+
+// Terningtypene widgeten tilbyr, og taket for hvor mange som kan kastes samtidig.
+// Bare d6 har ekte prikkeflater — d4, d8, d10, d12 og d20 har tall på flatene også i
+// virkeligheten, og tegnes derfor med sin egen silhuett og tallet i midten.
+const TERNING_TYPER  = [4, 6, 8, 10, 12, 20];
+const MAKS_TERNINGER = 6;
+
+// Silhuetten til hver terningtype som SVG-polygon i et 100×100-rutenett. d6 står ikke
+// her — den tegnes som et avrundet kvadrat med <rect>, siden polygon ikke gir runde
+// hjørner. d20 får i tillegg en indre trekant, slik ekte tjuekantede terninger ser ut.
+const TERNING_FORMER = {
+  4:  '50,8 93,85 7,85',
+  8:  '50,5 91,50 50,95 9,50',
+  10: '50,4 89,36 50,96 11,36',
+  12: '50,5 95,39 78,93 22,93 5,39',
+  20: '50,4 90,27 90,73 50,96 10,73 10,27',
+};
+
+// Prikkemønsteret på en d6, som [kolonne, rad] i et 3×3-rutenett (0 = venstre/topp,
+// 2 = høyre/bunn). Én prikk står i midten, to i motsatte hjørner, og så videre.
+const TERNING_PRIKKER = {
+  1: [[1, 1]],
+  2: [[0, 0], [2, 2]],
+  3: [[0, 0], [1, 1], [2, 2]],
+  4: [[0, 0], [2, 0], [0, 2], [2, 2]],
+  5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]],
+  6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]],
 };
 
 // Standardsted for værvarselet. Brukeren kan bytte sted i klokke-kortet; valget
 // lagres i state.vær_sted og deles av headeren og kortet. Koordinatene holdes på
 // maks 4 desimaler — se rundKoordinat().
-const STANDARD_VÆR_STED = { navn: 'Eidsvoll', lat: 60.33, lon: 11.22 };
+// `kilde` forteller hvor stedet kom fra: 'standard' (nødløsning), 'posisjon' (hentet
+// fra nettleseren) eller 'valgt' (brukeren søkte det opp selv). Bare 'valgt' er
+// ukrenkelig — de to andre lar seg overskrive av et nytt posisjonsoppslag.
+const STANDARD_VÆR_STED = { navn: 'Eidsvoll', lat: 60.33, lon: 11.22, kilde: 'standard' };
 
 // MERK: ikke sett en egen User-Agent på met.no-kallet, selv om API-dokumentasjonen
 // ber om det. Den regelen gjelder programmer som snakker med API-et direkte — en
@@ -92,11 +124,14 @@ function defaultState() {
     skrift_størrelse: 'normal',
     widget_størrelser: {},
     vær_sted:            { ...STANDARD_VÆR_STED }, // sted for vær + pollen (delt av alle sider)
+    terning_type:        6,   // hvilken terning som er valgt (antall sider)
+    terning_antall:      1,   // hvor mange som kastes om gangen
+    terning_kast:        [],  // siste kast, slik at kortet ikke står tomt etter omlasting
     notater:      { 'notat-1': { tekst: '', kursiv: false } },
-    bilder:       { 'bilde-1': {} }, // register over bildekort; selve bildene bor i IndexedDB
+    bilder:       {},                // ingen bildekort som standard; legges til via «+». Selve bildene bor i IndexedDB
     youtube:      {},                // ingen YouTube-kort som standard; legges til via «+»
     notat_teller: 1,
-    bilde_teller: 1,
+    bilde_teller: 0,
     youtube_teller: 0,
     eksport_signatur: null, // signatur av data ved siste eksport (for endrings-varsel)
     aktiv_side: 0,
@@ -123,19 +158,27 @@ function nySide(navn) {
     ulv_valgt:           null,
     ulv_navn:            'Klassebamse',
     gruppe_begrensninger: [],
+    // Rekkefølgen her er også den vertikale rekkefølgen innenfor hver kolonne.
+    // Alle enkeltinstans-widgets skal stå oppført, også de som er skjult fra start —
+    // applyLayout() tvinger inn manglende, og widget_hidden styrer hva som vises.
     widget_layout: [
-      { id: 'card-elever',     col: 1 },
-      { id: 'card-grupper',    col: 1 },
-      { id: 'card-klokke',     col: 2 },
-      { id: 'card-tilfeldig',  col: 2 },
-      { id: 'card-ordenselev', col: 2 },
-      { id: 'card-ulv',        col: 2 },
-      { id: 'card-timer',      col: 3 },
-      { id: 'card-notat-1',    col: 3 },
-      { id: 'card-dagsplan',   col: 3 },
-      { id: 'card-bilde-1',    col: 3 },
+      { id: 'card-klokke',     col: 1 },
+      { id: 'card-tilfeldig',  col: 1 },
+      { id: 'card-ordenselev', col: 1 },
+      { id: 'card-ulv',        col: 1 },
+      { id: 'card-terning',    col: 1 },
+      { id: 'card-dagsplan',   col: 2 },
+      { id: 'card-notat-1',    col: 2 },
+      { id: 'card-timer',      col: 2 },
+      { id: 'card-elever',     col: 3 },
+      { id: 'card-grupper',    col: 3 },
     ],
-    widget_hidden: [],
+    // En ny bruker møter et rolig bord: klokke, trekk, dagsplan, notat og elevliste.
+    // Resten ligger ett klikk unna i ⊞ Widgets, og dukker opp på plassen over når de
+    // slås på. Poenget er at førsteinntrykket får plass på skjermen uten å scrolle.
+    widget_hidden: [
+      'card-ordenselev', 'card-ulv', 'card-terning', 'card-timer', 'card-grupper',
+    ],
   };
 }
 
@@ -253,7 +296,17 @@ function loadState() {
       const vs = state.vær_sted;
       if (!vs || !vs.navn || typeof vs.lat !== 'number' || typeof vs.lon !== 'number') {
         state.vær_sted = { ...STANDARD_VÆR_STED };
+      } else if (!vs.kilde) {
+        // Lagret før v2.20 hadde ikke `kilde`. Sto stedet på standardverdien, har
+        // brukeren aldri valgt noe selv — da skal posisjonsoppslaget få lov til å
+        // overstyre. Har de søkt opp et sted, regnes det som deres eget valg.
+        vs.kilde = (vs.navn === STANDARD_VÆR_STED.navn) ? 'standard' : 'valgt';
       }
+      // Terning (v2.20). Klem verdiene innenfor det widgeten faktisk støtter, så en
+      // redigert eller importert fil ikke gir en «d7» eller 40 terninger på skjermen.
+      if (!TERNING_TYPER.includes(state.terning_type)) state.terning_type = 6;
+      state.terning_antall = Math.min(MAKS_TERNINGER, Math.max(1, state.terning_antall | 0 || 1));
+      if (!Array.isArray(state.terning_kast)) state.terning_kast = [];
       return state;
     }
   } catch (e) {
@@ -351,76 +404,242 @@ function pollenSammendrag() {
   return verst.nivå === 0 ? 'Lavt' : `${verst.navn} – ${POLLEN_NIVÅER[verst.nivå]}`;
 }
 
-// Tegner de hentede dataene der de skal vises: kompakt i toppteksten, og med vind,
-// nedbør og pollen i klokke-kortet. Skiller seg fra hentVær() ved at den ikke gjør
-// nettverkskall — den kan derfor kalles fritt når kortet nettopp er tegnet på nytt.
+// Tegner været i toppteksten: symbol, temperatur og stedsnavn. Detaljene ligger i
+// vær-popupen, som bygges av visVærPopup(). Er popupen åpen når nye data kommer inn,
+// tegnes den på nytt så den ikke står med utdaterte tall.
+// Gjør ingen nettverkskall — den kan derfor kalles fritt.
 function renderVær() {
-  const sted = værSted();
-  const d    = værData?.properties?.timeseries?.[0]?.data;
-
-  const emoji = d ? yrEmoji(d.next_1_hours?.summary.symbol_code ?? 'cloudy') : '';
-  const temp  = d ? Math.round(d.instant.details.air_temperature) : null;
-
+  const sted   = værSted();
+  const d      = værData?.properties?.timeseries?.[0]?.data;
   const header = document.getElementById('header-ver');
-  if (header) header.textContent = d ? `${emoji} ${temp}°C  ${sted.navn}` : '';
 
-  // Kortet kan være slått av for denne siden — da finnes ikke elementene, og vi
-  // lar det ligge. Neste henting (eller sidebytte) tegner dem på nytt.
-  if (!document.getElementById('klokke-digital')) return;
-  const sett = (id, verdi) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = verdi;
-  };
+  if (header) {
+    header.textContent = d
+      ? `${yrEmoji(d.next_1_hours?.summary.symbol_code ?? 'cloudy')} ${Math.round(d.instant.details.air_temperature)}°C  ${sted.navn}`
+      : '⏳ Henter vær…';
+  }
 
-  sett('klokke-vaer-emoji', d ? emoji : '⏳');
-  sett('klokke-vaer-temp',  d ? `${temp}°C` : '–');
-  sett('klokke-vaer-vind',  d ? `${Math.round(d.instant.details.wind_speed)} m/s` : '–');
-
-  // Nedbøren met.no selv har summert for de neste seks timene. Mer treffsikker enn å
-  // legge sammen timesverdiene på egen hånd, og den er allerede med i compact-svaret.
-  const nedbør = d?.next_6_hours?.details?.precipitation_amount;
-  sett('klokke-vaer-nedbor',
-       typeof nedbør === 'number' ? `${nedbør.toFixed(1).replace('.', ',')} mm` : '–');
-
-  const pollen = pollenSammendrag();
-  sett('klokke-vaer-pollen', pollen ?? '–');
-  document.getElementById('klokke-vaer-pollen')
-    ?.classList.toggle('pollen-hoyt', !!pollen && pollen.endsWith('høyt'));
-
-  sett('klokke-sted', `📍 ${sted.navn}`);
+  const popup = document.getElementById('vær-popup');
+  if (popup && !popup.classList.contains('hidden')) tegnVærPopup();
 }
 
-// Bygger og åpner/lukker vær-popupen: nåværende forhold pluss de neste 8 timene.
-// Bruker det allerede hentede `værData` — gjør ikke nytt nettverkskall.
+// Forklarende undertekst til stedsnavnet i popupen, så det aldri er uklart hvor
+// stedet kom fra — særlig når posisjonsoppslaget feilet og vi står på standardstedet.
+const STEDSKILDE_TEKST = {
+  standard: 'standardsted',
+  posisjon: 'fra din posisjon',
+  valgt:    'valgt av deg',
+};
+
+// Åpner/lukker vær-popupen. Innholdet bygges av tegnVærPopup(), som også kalles når
+// nye data kommer inn mens popupen står åpen.
 function visVærPopup() {
-  if (!værData) return;
-  const ts  = værData.properties.timeseries;
-  const nå  = ts[0].data.instant.details;
+  const popup = document.getElementById('vær-popup');
+  const skalÅpnes = popup.classList.contains('hidden');
+  if (skalÅpnes) tegnVærPopup();
+  popup.classList.toggle('hidden', !skalÅpnes);
+}
 
-  const timer = ts.slice(0, 8).map(t => ({
-    tid:    new Date(t.time).toLocaleTimeString('no', { hour: '2-digit', minute: '2-digit' }),
-    temp:   Math.round(t.data.instant.details.air_temperature),
-    emoji:  yrEmoji(t.data.next_1_hours?.summary.symbol_code ?? 'cloudy'),
-    nedbør: t.data.next_1_hours?.details.precipitation_amount ?? 0,
-  }));
+// Nedbør for de neste seks timene, slik met.no selv har summert den.
+function nedbørTekst(nå) {
+  const mm = nå?.next_6_hours?.details?.precipitation_amount;
+  return typeof mm === 'number' ? `${mm.toFixed(1).replace('.', ',')} mm` : '–';
+}
 
-  document.getElementById('vær-popup').innerHTML = `
+// Bygger hele innholdet i vær-popupen: sted, nåværende forhold, de neste 8 timene og
+// stedskontrollene. Bruker de allerede hentede `værData`/`pollenData` — ingen nye kall.
+// Nedbør og pollen lå tidligere bare i klokke-kortet; nå er dette eneste stedet været
+// vises i detalj.
+function tegnVærPopup() {
+  const popup = document.getElementById('vær-popup');
+  if (!popup) return;
+  const sted   = værSted();
+  const ts     = værData?.properties?.timeseries;
+  const nå     = ts?.[0]?.data;
+  const pollen = pollenSammendrag();
+
+  // Uten værdata viser vi likevel stedskontrollene — ellers ville popupen vært tom, og
+  // brukeren sittet fast på feil sted uten mulighet til å bytte.
+  const detaljer = !nå ? '<div class="vær-tom">Fikk ikke tak i værvarselet</div>' : `
+    <div class="vær-hoved">
+      <span class="vær-hoved-emoji">${yrEmoji(nå.next_1_hours?.summary.symbol_code ?? 'cloudy')}</span>
+      <span class="vær-hoved-temp">${Math.round(nå.instant.details.air_temperature)}°C</span>
+    </div>
     <div class="vær-nå">
-      <div class="vær-rad"><span>Temperatur</span><strong>${Math.round(nå.air_temperature)}°C</strong></div>
-      <div class="vær-rad"><span>Vind</span><strong>${Math.round(nå.wind_speed)} m/s</strong></div>
-      <div class="vær-rad"><span>Luftfuktighet</span><strong>${Math.round(nå.relative_humidity)}%</strong></div>
-      <div class="vær-rad"><span>Lufttrykk</span><strong>${Math.round(nå.air_pressure_at_sea_level)} hPa</strong></div>
+      <div class="vær-rad"><span>💨 Vind</span><strong>${Math.round(nå.instant.details.wind_speed)} m/s</strong></div>
+      <div class="vær-rad"><span>🌧 Nedbør (6 t)</span><strong>${nedbørTekst(nå)}</strong></div>
+      <div class="vær-rad"><span>🌿 Pollen</span><strong class="${pollen?.endsWith('høyt') ? 'pollen-hoyt' : ''}">${pollen ?? '–'}</strong></div>
+      <div class="vær-rad"><span>💧 Luftfuktighet</span><strong>${Math.round(nå.instant.details.relative_humidity)}%</strong></div>
+      <div class="vær-rad"><span>🌡 Lufttrykk</span><strong>${Math.round(nå.instant.details.air_pressure_at_sea_level)} hPa</strong></div>
     </div>
     <div class="vær-timer">
-      ${timer.map(t => `
-        <div class="vær-time-kort">
-          <span class="vær-time-tid">${t.tid}</span>
-          <span class="vær-time-emoji">${t.emoji}</span>
-          <span class="vær-time-temp">${t.temp}°</span>
-          ${t.nedbør > 0 ? `<span class="vær-time-nedbør">${t.nedbør}mm</span>` : '<span></span>'}
-        </div>`).join('')}
+      ${ts.slice(0, 8).map(t => {
+        const nedbør = t.data.next_1_hours?.details.precipitation_amount ?? 0;
+        return `<div class="vær-time-kort">
+          <span class="vær-time-tid">${new Date(t.time).toLocaleTimeString('no', { hour: '2-digit', minute: '2-digit' })}</span>
+          <span class="vær-time-emoji">${yrEmoji(t.data.next_1_hours?.summary.symbol_code ?? 'cloudy')}</span>
+          <span class="vær-time-temp">${Math.round(t.data.instant.details.air_temperature)}°</span>
+          ${nedbør > 0 ? `<span class="vær-time-nedbør">${nedbør}mm</span>` : '<span></span>'}
+        </div>`;
+      }).join('')}
     </div>`;
-  document.getElementById('vær-popup').classList.toggle('hidden');
+
+  popup.innerHTML = `
+    <div class="vær-sted-topp">
+      <span class="vær-sted-navn">📍 ${esc(sted.navn)}</span>
+      <span class="vær-sted-kilde">${STEDSKILDE_TEKST[sted.kilde] ?? ''}</span>
+    </div>
+    ${detaljer}
+    <div class="vær-sted-verktøy">
+      <button class="btn btn-ghost btn-sm w-full" id="btn-vær-posisjon">📍 Bruk min posisjon</button>
+      <input type="text" id="input-vær-sted" placeholder="…eller søk etter et sted" autocomplete="off">
+      <div id="vær-sted-treff" class="vær-sted-treff"></div>
+    </div>`;
+
+  // Må kobles hver gang: innerHTML kaster de gamle elementene og lytterne deres.
+  document.getElementById('btn-vær-posisjon').onclick = () => hentPosisjon(true);
+  document.getElementById('input-vær-sted').addEventListener('keydown', e => {
+    if (e.key === 'Enter')  søkSted();
+    if (e.key === 'Escape') popup.classList.add('hidden');
+  });
+}
+
+// ===================== Terning =====================
+// Id-en til den pågående kast-animasjonen. Ligger utenfor funksjonen så et nytt kast
+// kan avbryte et som fortsatt ruller — ellers ville to setInterval-er tegne om hverandre.
+let terningAnimasjon = null;
+
+// Trekker ett terningkast: et helt tall fra 1 til og med antall sider.
+function trilleTall(sider) {
+  return Math.floor(Math.random() * sider) + 1;
+}
+
+// Bygger SVG-en for én terningflate. d6 får ekte prikker; de øvrige typene tegnes som
+// sin egen silhuett med tallet i midten. Begge varianter bruker temavariablene, så
+// terningen følger fargetemaet uten egne regler per tema.
+function terningSVG(verdi, sider) {
+  const flate = sider === 6
+    ? '<rect class="terning-kropp" x="6" y="6" width="88" height="88" rx="16" />'
+    : `<polygon class="terning-kropp" points="${TERNING_FORMER[sider]}" />` +
+      (sider === 20 ? '<polygon class="terning-innerlinje" points="50,22 74,64 26,64" />' : '');
+
+  // Prikkene ligger i et 3×3-rutenett mellom 28 og 72, altså godt innenfor kanten.
+  const innhold = sider === 6
+    ? (TERNING_PRIKKER[verdi] ?? []).map(([kol, rad]) =>
+        `<circle class="terning-prikk" cx="${28 + kol * 22}" cy="${28 + rad * 22}" r="8" />`).join('')
+    // d4 har tallet litt lavere enn midten, ellers havner det i den smale toppen
+    : `<text class="terning-tall" x="50" y="${sider === 4 ? 64 : 52}">${verdi}</text>`;
+
+  return `<span class="terning-flate"><svg viewBox="0 0 100 100" role="img"
+            aria-label="Terning viser ${verdi}">${flate}${innhold}</svg></span>`;
+}
+
+// Tegner terningene, summen og antallet. `ruller` skrur på vrikke-klassen som brukes
+// mens kastet pågår. Kalles både ved oppstart, under animasjonen og når kastet lander
+// — den leser alltid verdiene den får inn, aldri state direkte.
+function renderTerninger(verdier, ruller = false) {
+  const flater = document.getElementById('terning-flater');
+  if (!flater) return; // kortet er slått av for denne siden
+
+  const sider = state.terning_type;
+  flater.className = ruller ? 'ruller' : '';
+  // Færre terninger = større flater. Uten dette blir seks terninger enten
+  // mikroskopiske eller så store at kortet sprenger kolonnen.
+  flater.style.setProperty('--terning-str',
+    verdier.length <= 1 ? '108px' : verdier.length === 2 ? '86px' : verdier.length <= 4 ? '68px' : '56px');
+  flater.innerHTML = verdier.map(v => terningSVG(v, sider)).join('');
+
+  // Summen er bare interessant når det ligger flere terninger på bordet.
+  const sum = document.getElementById('terning-sum');
+  if (sum) sum.textContent = verdier.length > 1 ? `Sum: ${verdier.reduce((a, b) => a + b, 0)}` : '';
+
+  const antall = document.getElementById('terning-antall-tall');
+  if (antall) antall.textContent = state.terning_antall;
+}
+
+// Bygger knapperaden med terningtyper og markerer den aktive. Egen funksjon slik at
+// d4…d20 bare står oppført ett sted (TERNING_TYPER).
+function renderTerningType() {
+  const rad = document.getElementById('terning-type');
+  if (!rad) return;
+  rad.innerHTML = TERNING_TYPER.map(n =>
+    `<button class="terning-type-knapp${n === state.terning_type ? ' aktiv' : ''}"
+             data-sider="${n}" title="Bytt til d${n}">d${n}</button>`).join('');
+  rad.querySelectorAll('.terning-type-knapp').forEach(btn => {
+    btn.onclick = () => settTerningType(Number(btn.dataset.sider));
+  });
+}
+
+// Kaster terningene. Selve resultatet trekkes FØRST, og animasjonen viser bare
+// tilfeldige mellomverdier på veien — da kan et avbrutt kast aldri endre utfallet.
+function kastTerning() {
+  if (!document.getElementById('terning-flater')) return;
+  if (terningAnimasjon) clearInterval(terningAnimasjon);
+
+  const antall = state.terning_antall;
+  const sider  = state.terning_type;
+  const fasit  = Array.from({ length: antall }, () => trilleTall(sider));
+
+  // Noen blir kvalme av bevegelse på skjerm, og nettleseren vet hvem. Da lander
+  // kastet med én gang i stedet for å trille.
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    landTerning(fasit);
+    return;
+  }
+
+  let igjen = 8; // 8 bilder à 60 ms ≈ et halvt sekund
+  terningAnimasjon = setInterval(() => {
+    if (--igjen <= 0) {
+      clearInterval(terningAnimasjon);
+      terningAnimasjon = null;
+      landTerning(fasit);
+      return;
+    }
+    renderTerninger(Array.from({ length: antall }, () => trilleTall(sider)), true);
+  }, 60);
+}
+
+// Lagrer og viser det endelige kastet. Kastet huskes, så kortet står med forrige
+// resultat i stedet for tomt etter en omlasting.
+function landTerning(verdier) {
+  state.terning_kast = verdier;
+  saveState();
+  renderTerninger(verdier, false);
+}
+
+// Bytter terningtype og kaster på nytt med en gang. Et gammelt resultat kan være
+// ugyldig for den nye typen (en 17-er hører ikke hjemme på en d6), og en tom flate
+// ser ødelagt ut — så et friskt kast er den eneste tilstanden som alltid stemmer.
+// Oppsett-endringer lander uten animasjon; det er bare Kast-knappen som skal ha drama.
+function settTerningType(sider) {
+  state.terning_type = sider;
+  renderTerningType();
+  landTerning(Array.from({ length: state.terning_antall }, () => trilleTall(sider)));
+}
+
+// Endrer antall terninger innenfor 1…MAKS_TERNINGER og kaster på nytt.
+function endreTerningAntall(delta) {
+  const ny = Math.max(1, Math.min(MAKS_TERNINGER, state.terning_antall + delta));
+  if (ny === state.terning_antall) return;
+  state.terning_antall = ny;
+  landTerning(Array.from({ length: ny }, () => trilleTall(state.terning_type)));
+}
+
+// Kobler opp knappene og tegner kortet slik det sto ved forrige besøk.
+function setupTerning() {
+  const kast = document.getElementById('btn-terning-kast');
+  if (!kast) return;
+  kast.onclick = kastTerning;
+  document.getElementById('btn-terning-minus').onclick = () => endreTerningAntall(-1);
+  document.getElementById('btn-terning-pluss').onclick = () => endreTerningAntall(+1);
+
+  renderTerningType();
+  // Har vi ikke et lagret kast som passer antallet (helt ny bruker, eller importert
+  // fil), trilles et friskt et så kortet aldri står tomt.
+  const lagret = state.terning_kast.length === state.terning_antall
+    ? state.terning_kast
+    : Array.from({ length: state.terning_antall }, () => trilleTall(state.terning_type));
+  renderTerninger(lagret, false);
 }
 
 // ===================== Klokke =====================
@@ -476,79 +695,100 @@ function settViser(id, grader) {
 }
 
 // ===================== Sted for vær og pollen =====================
-// Kobler opp stedsvelgeren i klokke-kortet: knappen åpner søkefeltet, Enter søker,
-// Escape lukker. Kjøres én gang fra settOppHendelser().
-function settOppStedsvelger() {
-  const knapp = document.getElementById('klokke-sted');
-  const boks  = document.getElementById('klokke-sted-sok');
-  const input = document.getElementById('input-klokke-sted');
-  if (!knapp || !boks || !input) return;
+// Ber nettleseren om brukerens posisjon og gjør koordinatene om til et stedsnavn.
+// `påBegjæring` skiller de to bruksmåtene: ved oppstart skjer dette stille i bakgrunnen,
+// mens et klikk på «Bruk min posisjon» skal gi tydelig beskjed om hva som skjedde.
+//
+// Viktige forbehold, i den rekkefølgen de slår til:
+//  - Posisjon krever «secure context». Åpner du index.html rett fra maskinen (file://)
+//    er API-et utilgjengelig, og vi blir stående på det stedet vi allerede har.
+//  - Brukeren kan si nei. Da beholder vi forrige sted i stedet for å mase.
+//  - Har brukeren selv søkt opp et sted (kilde 'valgt'), rører vi det ikke ved oppstart.
+async function hentPosisjon(påBegjæring = false) {
+  if (!påBegjæring && værSted().kilde === 'valgt') return;
 
-  knapp.onclick = e => {
-    e.stopPropagation();
-    boks.classList.toggle('hidden');
-    if (!boks.classList.contains('hidden')) {
-      input.value = '';
-      document.getElementById('klokke-sted-treff').innerHTML = '';
-      input.focus();
+  if (!navigator.geolocation || !window.isSecureContext) {
+    if (påBegjæring) {
+      notify('Posisjon krever at siden åpnes over https (eller localhost)', 'warning');
     }
-  };
-  // Klikk inne i søkeboksen skal ikke boble opp til dokument-lytteren, som lukker
-  // alle nedtrekk — ellers ville feltet lukke seg i det man klikket i det.
-  boks.addEventListener('click', e => e.stopPropagation());
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  søkSted();
-    if (e.key === 'Escape') boks.classList.add('hidden');
-  });
+    return;
+  }
+
+  try {
+    const pos = await new Promise((ok, nei) =>
+      navigator.geolocation.getCurrentPosition(ok, nei, { timeout: 8000, maximumAge: 600_000 }));
+    const lat = rundKoordinat(pos.coords.latitude);
+    const lon = rundKoordinat(pos.coords.longitude);
+    state.vær_sted = { navn: await stedsnavnFor(lat, lon), lat, lon, kilde: 'posisjon' };
+    saveState();
+    if (påBegjæring) notify(`Værvarsel hentes nå for ${state.vær_sted.navn}`);
+    await hentVær();
+  } catch (_) {
+    // Avslag, tidsavbrudd eller ingen posisjonstjeneste — vi blir der vi er.
+    if (påBegjæring) notify('Fikk ikke tak i posisjonen din', 'warning');
+  }
 }
 
-// Slår opp stedsnavnet brukeren skrev inn via Open-Meteo sitt åpne geokodings-API
-// (ingen nøkkel) og lister treffene som klikkbare rader. Treffene mellomlagres i
-// `stedsTreff` og radene refererer til dem med indeks — da slipper vi å bake
-// stedsnavn inn i onclick-attributter, der en apostrof ville brutt markupen.
+// Slår opp hvilket sted et koordinatpar ligger i, slik at vi kan vise et navn i stedet
+// for tall. Bruker BigDataCloud sitt åpne klient-endepunkt (ingen nøkkel). Feiler det,
+// faller vi tilbake til en nøytral etikett — været virker uansett, siden det er
+// koordinatene og ikke navnet som sendes til met.no.
+async function stedsnavnFor(lat, lon) {
+  try {
+    const d = await hentJson(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=no`);
+    return d.city || d.locality || d.principalSubdivision || 'Min posisjon';
+  } catch (_) {
+    return 'Min posisjon';
+  }
+}
+
+// Søker opp stedsnavnet brukeren skrev inn i vær-popupen og lister treffene som
+// klikkbare rader. Treffene mellomlagres i `stedsTreff` og radene refererer til dem med
+// indeks — da slipper vi å bake stedsnavn inn i onclick-attributter, der en apostrof
+// ville brutt markupen.
 async function søkSted() {
-  const navn  = document.getElementById('input-klokke-sted').value.trim();
-  const treff = document.getElementById('klokke-sted-treff');
+  const navn  = document.getElementById('input-vær-sted').value.trim();
+  const treff = document.getElementById('vær-sted-treff');
   if (!navn) return;
 
-  treff.innerHTML = '<div class="klokke-sted-tom">Søker…</div>';
+  treff.innerHTML = '<div class="vær-sted-tom">Søker…</div>';
   try {
     const data = await hentJson(
       `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(navn)}&count=6&language=no&format=json`
     );
     stedsTreff = data.results ?? [];
     if (!stedsTreff.length) {
-      treff.innerHTML = '<div class="klokke-sted-tom">Fant ingen steder med det navnet</div>';
+      treff.innerHTML = '<div class="vær-sted-tom">Fant ingen steder med det navnet</div>';
       return;
     }
     treff.innerHTML = stedsTreff.map((r, i) => {
       // Fylke og land som undertekst, så «Eidsvoll» i Akershus er lett å skille fra
       // et likelydende sted i utlandet.
       const under = [r.admin1, r.country].filter(Boolean).join(', ');
-      return `<button class="klokke-sted-treff-rad" data-i="${i}">
+      return `<button class="vær-sted-treff-rad" data-i="${i}">
                 <strong>${esc(r.name)}</strong><span>${esc(under)}</span>
               </button>`;
     }).join('');
-    treff.querySelectorAll('.klokke-sted-treff-rad').forEach(btn => {
+    treff.querySelectorAll('.vær-sted-treff-rad').forEach(btn => {
       btn.onclick = () => velgSted(stedsTreff[Number(btn.dataset.i)]);
     });
   } catch (_) {
-    treff.innerHTML = '<div class="klokke-sted-tom">Søket feilet — sjekk nettforbindelsen</div>';
+    treff.innerHTML = '<div class="vær-sted-tom">Søket feilet — sjekk nettforbindelsen</div>';
   }
 }
 
-// Lagrer det valgte stedet (globalt, delt av alle sider), lukker søket og henter vær
-// og pollen på nytt med de nye koordinatene.
+// Lagrer et sted brukeren selv har søkt opp. Merkes 'valgt', slik at posisjonsoppslaget
+// ved neste oppstart ikke overstyrer det.
 function velgSted(r) {
   if (!r) return;
   state.vær_sted = {
-    navn: r.name,
-    lat:  rundKoordinat(r.latitude),
-    lon:  rundKoordinat(r.longitude),
+    navn:  r.name,
+    lat:   rundKoordinat(r.latitude),
+    lon:   rundKoordinat(r.longitude),
+    kilde: 'valgt',
   };
   saveState();
-  document.getElementById('klokke-sted-sok').classList.add('hidden');
-  document.getElementById('klokke-sted').textContent = `📍 ${state.vær_sted.navn}`;
   notify(`Værvarsel hentes nå for ${state.vær_sted.navn}`);
   hentVær();
 }
@@ -1090,9 +1330,10 @@ function leggTilNotat() {
   const id = `notat-${state.notat_teller}`;
   state.notater[id] = { tekst: '', kursiv: false };
   const cardId = `card-${id}`;
-  aktivSide().widget_layout.push({ id: cardId, col: 1 });
+  const col = romsligsteKolonne();
+  aktivSide().widget_layout.push({ id: cardId, col });
   const el = lagNotatElement(id);
-  document.querySelector('.col-wrapper[data-col="1"]').appendChild(el);
+  document.querySelector(`.col-wrapper[data-col="${col}"]`).appendChild(el);
   setupNotat(id);
   settOppDragOgDrop();
   applyLayout();
@@ -1457,6 +1698,31 @@ function renderListerModal() {
   </div>`;
 }
 
+// Finner kolonnen med mest ledig plass på aktiv side, altså den som er kortest akkurat
+// nå. Vi måler den faktiske høyden i nettleseren i stedet for å telle kort, fordi et
+// kort kan være alt fra en knapperad til en full elevliste — og fordi per-widget-zoom
+// (S/M/L/XL) endrer hvor mye plass det samme kortet tar.
+//
+// Kolonnene er flex-barn av <main> med align-items: flex-start, så høyden på en
+// .col-wrapper ER innholdshøyden. En tom kolonne måler ~0 og vinner dermed alltid.
+// Ved likt (typisk når alt er tomt) vinner den venstre, siden > gjør at første minimum
+// beholdes. Returnerer et 1-indeksert kolonnenummer, klemt til antallet siden har.
+function romsligsteKolonne() {
+  const wrappers = [...document.querySelectorAll('.col-wrapper')];
+  if (!wrappers.length) return 1;
+
+  let beste = 1;
+  let lavest = Infinity;
+  wrappers.forEach(w => {
+    const høyde = w.getBoundingClientRect().height;
+    if (høyde < lavest) {
+      lavest = høyde;
+      beste = Number(w.dataset.col);
+    }
+  });
+  return Math.min(beste, aktivSide().kolonner ?? 3);
+}
+
 // ===================== Layout (drag) =====================
 // Plasserer hvert widget-kort i riktig kolonne for aktiv side, og skjuler dem som
 // står i widget_hidden. Kjøres ved sidebytte, drag-slipp og widget-endringer.
@@ -1524,13 +1790,32 @@ function renderWidgetMeny() {
 }
 
 // Skrur en widget av/på for aktiv side ved å legge id-en til eller fjerne den fra
-// widget_hidden. Posisjonen i widget_layout beholdes, så kortet kommer tilbake der
-// det var når det slås på igjen.
+// widget_hidden.
+//
+// Når et kort slås PÅ, flyttes det til kolonnen med mest ledig plass og legges nederst
+// der — samme regel som for nye notat-, bilde- og YouTube-kort. Det gir én forutsigbar
+// regel for alt som dukker opp, i stedet for at kortet spretter tilbake til en gammel
+// plass i en kolonne som kanskje er full. Vil du ha det et annet sted, drar du det dit.
+//
+// Vi flytter oppføringen bakerst i widget_layout, ikke bare endrer `col`: rekkefølgen i
+// lista er også den vertikale rekkefølgen innenfor kolonnen, så uten dette ville kortet
+// kunne dukke opp midt i stabelen i stedet for nederst.
 function toggleWidgetSynlighet(id, synlig) {
   const skjult = aktivSide().widget_hidden ?? [];
   aktivSide().widget_hidden = synlig
     ? skjult.filter(h => h !== id)
     : [...skjult, id];
+
+  if (synlig) {
+    const layout = aktivSide().widget_layout;
+    const idx = layout.findIndex(w => w.id === id);
+    if (idx !== -1) {
+      const [entry] = layout.splice(idx, 1);
+      entry.col = romsligsteKolonne();
+      layout.push(entry);
+    }
+  }
+
   saveState();
   applyLayout();
   renderWidgetMeny();
@@ -1891,28 +2176,22 @@ function byttSide(idx) {
 function leggTilSide() {
   const nr = state.sider.length + 1;
   const side = nySide(`Side ${nr}`);
-  // Gi den nye siden EGNE notat- og bilde-instanser, ellers ville den delt
-  // card-notat-1/card-bilde-1 (og dermed innholdet) med side 1.
+  // Gi den nye siden sin EGEN notat-instans, ellers ville den delt card-notat-1
+  // (og dermed innholdet) med side 1. Bildekort lages ikke her: de er opt-in via
+  // «+ 🖼 Bilde», og en instans uten plass i widget_layout ville blitt foreldreløs.
   const notatId = `notat-${++state.notat_teller}`;
   state.notater[notatId] = { tekst: '', kursiv: false };
-  const bildeId = `bilde-${++state.bilde_teller}`;
-  state.bilder[bildeId] = { data: null };
   side.widget_layout = side.widget_layout.map(w =>
-    w.id === 'card-notat-1' ? { ...w, id: `card-${notatId}` } :
-    w.id === 'card-bilde-1' ? { ...w, id: `card-${bildeId}` } : w
+    w.id === 'card-notat-1' ? { ...w, id: `card-${notatId}` } : w
   );
   // Ny side starter tom: alle widgets skjules som default. Læreren henter dem
-  // fram igjen via ⊞ Widgets-menyen. widget_layout beholdes intakt så posisjonene
-  // huskes når et kort slås på igjen.
+  // fram igjen via ⊞ Widgets-menyen, og havner da i kolonnen med mest ledig plass.
   side.widget_hidden = side.widget_layout.map(w => w.id);
   state.sider.push(side);
   // Opprett DOM-elementene for de nye instansene (applyLayout plasserer/skjuler dem ved byttSide)
   const notatEl = lagNotatElement(notatId);
   document.querySelector('.col-wrapper[data-col="1"]').appendChild(notatEl);
   setupNotat(notatId);
-  const bildeEl = lagBildeElement(bildeId);
-  document.querySelector('.col-wrapper[data-col="1"]').appendChild(bildeEl);
-  setupBilde(bildeId);
   settOppDragOgDrop();
   byttSide(state.sider.length - 1);
 }
@@ -1951,6 +2230,21 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // funksjon endres, skal OPPDATERINGSLOGG_HTML og BRUKERVEILEDNING_HTML oppdateres i
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.20</div>
+    <div class="logg-dato">25. august 2026</div>
+    <ul>
+      <li><strong>Ny terning-widget:</strong> kast <strong>d4, d6, d8, d10, d12 eller d20</strong>, og <strong>1 til 6 terninger</strong> om gangen. Ligger klar under <strong>⊞ Widgets → 🎲 Terning</strong></li>
+      <li><strong>Ekte terningflater:</strong> d6 tegnes med prikker slik elevene kjenner den igjen, mens de andre får sin egen form — trekant, rombe, femkant og tjuekant — med tallet i midten</li>
+      <li>Kaster du flere terninger, vises <strong>summen</strong> under. Hurtigtast: <kbd>k</kbd> for å kaste</li>
+      <li><strong>Nye kort finner selv en ledig plass.</strong> Legger du til et kort — enten ved å krysse det av i <strong>⊞ Widgets</strong> eller med <strong>+ Notat</strong>, <strong>+ Bilde</strong> eller <strong>+ YouTube</strong> — havner det nederst i den kolonnen som har mest ledig plass akkurat da. Slipper du å lete etter hvor det ble av, og kolonnene holder seg jevne. Du kan flytte det dit du vil etterpå, som før</li>
+      <li><strong>Været finner stedet ditt selv.</strong> Første gang du åpner appen spør nettleseren om posisjonen din, og værvarselet settes til stedet du faktisk er. Sier du nei — eller åpner fila rett fra maskinen, der posisjon ikke er tillatt — brukes Eidsvoll som nødløsning. Har du selv søkt opp et sted, blir det stående</li>
+      <li><strong>Alt været på ett sted:</strong> klokke-kortet viser nå bare tiden. Trykk i stedet på været oppe til høyre, så får du <strong>vind, nedbør de neste 6 timene, pollen, luftfuktighet og lufttrykk</strong> — pluss varselet time for time. Der bytter du også sted, med <strong>📍 Bruk min posisjon</strong> eller et søk</li>
+      <li><strong>Roligere start for nye brukere:</strong> førstegangsoppsettet viser nå bare <strong>klokke, tilfeldig elev, dagsplan, notat og elevliste</strong>. Da får hele siden plass på skjermen — inkludert hurtigtast-raden nederst — uten å scrolle. Ordenselever, klassebamse, terning, timer og grupper ligger ett klikk unna i <strong>⊞ Widgets</strong>, og dukker opp på sin faste plass når du slår dem på. <em>Har du brukt appen før, beholder du oppsettet ditt akkurat som det er</em></li>
+      <li>Bildekortet er ikke lenger med fra start — legg det til med <strong>⊞ Widgets → + 🖼 Bilde</strong> når du trenger det, på samme måte som YouTube-kortet</li>
+      <li>Terningen «triller» et lite øyeblikk før den lander. Har du slått på <strong>redusert bevegelse</strong> i systeminnstillingene, lander den med én gang i stedet</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v2.19</div>
     <div class="logg-dato">25. august 2026</div>
@@ -2220,7 +2514,8 @@ const BRUKERVEILEDNING_HTML = `
   <p><strong>Per side</strong> (egen for hver klasse): elevlisten, grupper, alle trekk og backlogs (tilfeldig/ordenselev/klassebamse), dagsplanen, gruppebegrensninger, klassebamsens navn — pluss kolonneoppsett, notater og bilder.</p>
   <p><strong>Delt mellom alle sider:</strong> lagrede klasselister (📋 Lister — et felles bibliotek du kan laste inn i hvilken som helst side), tema, font, skriftstørrelse og timeren.</p>
   <p>Timeren er felles og fortsetter å gå selv om du bytter side. Vil du f.eks. vise et bilde på en egen side mens nedtellingen ruller, går det helt fint — timeren teller videre i bakgrunnen.</p>
-  <p>En <strong>ny side starter helt tom</strong> — ingen kort er synlige ennå. Du henter selv fram akkurat de kortene du vil ha via <strong>⊞ Widgets</strong>-menyen, så hver side blir nøyaktig slik du ønsker den. (Side 1 beholder sitt vanlige oppsett.)</p>
+  <p>En <strong>ny side starter helt tom</strong> — ingen kort er synlige ennå. Du henter selv fram akkurat de kortene du vil ha via <strong>⊞ Widgets</strong>-menyen, så hver side blir nøyaktig slik du ønsker den.</p>
+  <p><strong>Side 1 starter med et lite utvalg</strong> første gang du åpner appen: klokke og tilfeldig elev til venstre, dagsplan og notat i midten, og elevlisten til høyre. Det er med vilje få kort — da får hele siden plass på skjermen med én gang. Ordenselever, klassebamse, terning, timer og grupper ligger klare i <strong>⊞ Widgets</strong> og dukker opp på sin faste plass når du krysser dem av.</p>
 
   <h4>Kom i gang</h4>
   <p>Trykk <strong>+ Legg til elev</strong> (eller tasten <kbd>a</kbd>) for å legge inn elevene i klassen din. Du kan ha opptil 35 elever inne samtidig.</p>
@@ -2247,11 +2542,24 @@ const BRUKERVEILEDNING_HTML = `
   <h4>⛔ Gruppebegrensning</h4>
   <p>Klikk <strong>⛔ Par</strong> i Grupper-kortets hjørne for å åpne begrensningslisten. Velg to elever fra nedtrekksmenyene og klikk <strong>Legg til</strong>. Paret vil aldri havne i samme gruppe. Du kan legge til så mange par du vil. Fjern et par ved å klikke <strong>✕</strong> ved siden av det.</p>
 
+  <h4>🎲 Terning</h4>
+  <p>Trykk <strong>🎲 Kast</strong> (eller tasten <kbd>k</kbd>) for å kaste. Terningen triller et lite øyeblikk før den lander, så klassen rekker å bli spent.</p>
+  <p><strong>Velg terningtype</strong> i knapperaden: <strong>d4, d6, d8, d10, d12</strong> eller <strong>d20</strong> — tallet forteller hvor mange sider terningen har. Den vanlige sekssidede (d6) vises med prikker, slik elevene kjenner den igjen fra brettspill. De andre har tall på flatene, akkurat som ekte terninger av den typen.</p>
+  <p><strong>Flere terninger:</strong> bruk <strong>−</strong> og <strong>+</strong> ved siden av kast-knappen for å kaste opptil seks om gangen. Da vises <strong>summen</strong> under terningene — nyttig i matte, eller når to terninger skal gi et tall mellom 2 og 12.</p>
+  <p>Bytter du type eller antall, kastes det automatisk på nytt, slik at det aldri ligger et gammelt resultat igjen som ikke passer terningen. Siste kast huskes til neste gang du åpner siden.</p>
+  <p>Terningoppsettet er <strong>felles for alle sider</strong>, på samme måte som timeren.</p>
+
   <h4>🕐 Klokke</h4>
   <p>Viser en <strong>analog urskive</strong> med tallene 1–12 og tre visere, og den <strong>digitale tiden</strong> rett under. Time- og minuttviseren glir jevnt slik ekte klokker gjør — er den 09:55, står timeviseren nesten på 10, ikke rett på 9. Det gjør kortet trygt å bruke når klassen øver på å lese klokka.</p>
-  <p>Under klokka står <strong>været</strong>: vind, hvor mye nedbør som er ventet de neste 6 timene, og et <strong>pollenvarsel</strong> som viser hvilken pollentype som er høyest nå (or, bjørk, gress eller burot). Er pollennivået høyt, blir teksten rød — nyttig å oppdage før friminuttet hvis du har allergikere i klassen.</p>
-  <p><strong>Bytte sted:</strong> klikk på stedsnavnet nederst i kortet (📍), skriv inn stedet ditt og trykk <kbd>Enter</kbd>. Velg riktig treff fra lista — fylke og land står under hvert navn, så du ikke havner i feil land. Været i toppen av siden følger samme sted, og valget huskes til neste gang. Standard er Eidsvoll.</p>
-  <p>Er nettet nede eller været ikke lastet ennå, står det bare streker i værfeltene. Klokka går som normalt uansett — den henter tiden fra maskinen din, ikke fra nettet.</p>
+  <p>Kortet viser bare tiden. <strong>Været finner du oppe til høyre</strong> i toppen av siden — se avsnittet under.</p>
+  <p>Klokka går uansett om nettet er nede: den henter tiden fra maskinen din.</p>
+
+  <h4>🌦 Været</h4>
+  <p>Oppe til høyre står dagens vær med symbol, temperatur og stedsnavn. <strong>Klikk på det</strong> for å åpne detaljene: vind, <strong>nedbør de neste 6 timene</strong>, <strong>pollenvarsel</strong>, luftfuktighet og lufttrykk — pluss varselet time for time de neste åtte timene.</p>
+  <p><strong>Pollenvarselet</strong> viser hvilken pollentype som er høyest akkurat nå (or, bjørk, gress eller burot) og hvor kraftig det er. Er nivået høyt, blir teksten rød — nyttig å oppdage før friminuttet hvis du har allergikere i klassen.</p>
+  <p><strong>Stedet finner appen selv.</strong> Første gang spør nettleseren om å få bruke posisjonen din, og været settes til stedet du er. Under stedsnavnet står det hvor stedet kom fra, så du aldri er i tvil.</p>
+  <p><strong>Vil du bytte sted?</strong> Nederst i vær-vinduet ligger <strong>📍 Bruk min posisjon</strong>, og et søkefelt der du kan skrive inn et hvilket som helst sted og trykke <kbd>Enter</kbd>. Fylke og land står under hvert treff, så du ikke havner i feil land. Et sted du har valgt selv blir stående — det overskrives ikke av posisjonen neste gang du åpner appen.</p>
+  <p>Sier du nei til posisjon, eller åpner appen som en fil rett fra maskinen (der nettleseren ikke tillater posisjon), brukes <strong>Eidsvoll</strong> som nødløsning til du velger noe annet.</p>
 
   <h4>Timer</h4>
   <p>Standard er 5 minutter. Trykk <strong>Sett tid</strong> (eller <kbd>s</kbd>) for å velge en annen varighet (1–60 min). Start og stopp med <strong>▶ Start</strong> (eller <kbd>t</kbd>). En lyd spilles av når tiden er ute.</p>
@@ -2266,6 +2574,7 @@ const BRUKERVEILEDNING_HTML = `
   <p><strong>Endre rekkefølge:</strong> hold inne dra-håndtaket <strong>⠿</strong> helt til høyre på punktet (vises når du holder musa over raden) og dra det opp eller ned. En blå strek viser hvor punktet havner når du slipper.</p>
 
   <h4>🖼 Bilde-widget</h4>
+  <p>Bildekortet er ikke med fra start. Legg det til via <strong>⊞ Widgets → + 🖼 Bilde</strong> — du kan ha så mange bildekort du vil.</p>
   <p>Klikk på bilde-kortet for å velge en bildefil fra datamaskinen (maks 50 MB). Du kan også lime inn et bilde direkte med <kbd>Ctrl+V</kbd> (f.eks. et skjermbilde) — klikk først på kortet du vil lime inn i. Bildet lagres i nettleseren (IndexedDB) og vises igjen ved neste besøk. Trykk <strong>Fjern bilde</strong> for å slette bildeinnholdet.</p>
   <p>Du kan ha <strong>flere bildekort</strong>: åpne <strong>⊞ Widgets</strong>-menyen og klikk <strong>+ Bilde</strong>. Slett et bildekort med <strong>✕</strong> i kortets øverste høyre hjørne. Bildekort er per side — forskjellige sider har forskjellige bilder.</p>
 
@@ -2277,7 +2586,8 @@ const BRUKERVEILEDNING_HTML = `
   <h4>Tilpasse layouten</h4>
   <p>Dra et kort til en annen kolonne ved å holde inne dra-håndtaket <strong>⠿</strong> (dukker opp når du holder musen over kortet). Layouten huskes automatisk.</p>
   <p><strong>Fjerne et kort:</strong> hold musen over kortet og klikk <strong>✕</strong> øverst i høyre hjørne. Faste widgets (elever, grupper, trekk, timer, dagsplan) blir bare skjult — du henter dem tilbake i <strong>⊞ Widgets</strong>-menyen. Notat- og bildekort slettes helt.</p>
-  <p><strong>⊞ Widgets-menyen</strong> (øverst til høyre) viser de faste widgetene med av/på-avkryssing per side. Notat og bilde har i stedet en <strong>«+»</strong> — trykk for å legge til så mange du vil. Hvert nytt kort er eget for den siden du står på.</p>
+  <p><strong>⊞ Widgets-menyen</strong> (øverst til høyre) viser de faste widgetene med av/på-avkryssing per side. Notat, bilde og YouTube har i stedet en <strong>«+»</strong> — trykk for å legge til så mange du vil. Hvert nytt kort er eget for den siden du står på.</p>
+  <p><strong>Hvor havner et nytt kort?</strong> Nederst i den kolonnen som har mest ledig plass akkurat da — enten du krysser det av i menyen eller trykker «+». Da slipper du å lete etter det, og kolonnene holder seg noenlunde like lange. Vil du ha det et annet sted, drar du det dit etterpå med <strong>⠿</strong>. Merk at et kort du skrur av og på igjen kan havne et annet sted enn der det sto, siden regelen er den samme uansett.</p>
 
   <h4>Kolonnebredde og antall kolonner</h4>
   <p><strong>Juster bredden:</strong> hold musen mellom to kolonner — det dukker opp en tynn skillelinje. Dra i den for å gjøre den ene kolonnen bredere og den andre smalere. Breddene huskes per side.</p>
@@ -2309,6 +2619,7 @@ const BRUKERVEILEDNING_HTML = `
     <li><kbd>s</kbd> — Sett timer-tid</li>
     <li><kbd>g</kbd> — Del inn i grupper</li>
     <li><kbd>d</kbd> — Legg til dagsplan-punkt</li>
+    <li><kbd>k</kbd> — Kast terning</li>
     <li><kbd>l</kbd> — Vis klasselister</li>
     <li><kbd>b</kbd> — Tavlemodus</li>
     <li><kbd>n</kbd> — Nullstill…</li>
@@ -2717,15 +3028,11 @@ function settOppHendelser() {
   };
   document.getElementById('vær-popup').addEventListener('click', e => e.stopPropagation());
 
-  // Stedsvelger i klokke-kortet
-  settOppStedsvelger();
-
   // Lukk alle dropdowns ved klikk utenfor
   document.addEventListener('click', () => {
     widgetDropdown.classList.add('hidden');
     klasseromDrop.classList.add('hidden');
     document.getElementById('vær-popup').classList.add('hidden');
-    document.getElementById('klokke-sted-sok')?.classList.add('hidden');
   });
 
   // Lukk modal ved klikk på overlay
@@ -2768,6 +3075,7 @@ function settOppHendelser() {
       s: () => document.getElementById('btn-timer-sett').click(),
       d: () => document.getElementById('btn-dagsplan-legg-til').click(),
       g: () => document.getElementById('btn-grupper-ny').click(),
+      k: () => kastTerning(),
       l: () => document.getElementById('btn-lister').click(),
       b: () => document.getElementById('btn-blackboard').click(),
       n: () => document.getElementById('btn-nullstill').click(),
@@ -3109,7 +3417,7 @@ function leggTilBilde() {
   const id = `bilde-${state.bilde_teller}`;
   state.bilder[id] = {};
   const cardId = `card-${id}`;
-  const col = Math.min(3, aktivSide().kolonner ?? 3);
+  const col = romsligsteKolonne();
   aktivSide().widget_layout.push({ id: cardId, col });
   const el = lagBildeElement(id);
   document.querySelector(`.col-wrapper[data-col="${col}"]`).appendChild(el);
@@ -3322,7 +3630,7 @@ function leggTilYoutube() {
   const id = `youtube-${state.youtube_teller}`;
   state.youtube[id] = { modus: 'video' };
   const cardId = `card-${id}`;
-  const col = Math.min(3, aktivSide().kolonner ?? 3);
+  const col = romsligsteKolonne();
   aktivSide().widget_layout.push({ id: cardId, col });
   const el = lagYoutubeElement(id);
   document.querySelector(`.col-wrapper[data-col="${col}"]`).appendChild(el);
@@ -3612,7 +3920,11 @@ function init() {
   oppdaterDato();
   setupKlokke();
   oppdaterKlokke();
+  // Hent været med det stedet vi allerede har, og be samtidig om posisjon i bakgrunnen.
+  // Går posisjonen gjennom, hentes været på nytt for riktig sted — men vi venter ikke
+  // på svaret, så et tregt eller avslått oppslag aldri forsinker oppstarten.
   hentVær();
+  hentPosisjon();
   setInterval(oppdaterDato,   60_000);
   setInterval(oppdaterKlokke,  1_000);
   setInterval(hentVær,       600_000);
@@ -3629,6 +3941,7 @@ function init() {
   }
 
   renderTimer();
+  setupTerning();
 
   for (const instansId of Object.keys(state.bilder)) {
     const el = lagBildeElement(instansId);

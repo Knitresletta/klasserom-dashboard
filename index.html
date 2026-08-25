@@ -162,6 +162,15 @@
               <button class="str-knapp widget-str-valg" data-widget="card-klokke" data-størrelse="xl">XL</button>
             </div>
           </div>
+          <div class="widget-str-rad" data-widget="card-terning">
+            <span>Terning</span>
+            <div class="str-knapper">
+              <button class="str-knapp widget-str-valg" data-widget="card-terning" data-størrelse="liten">S</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-terning" data-størrelse="normal">M</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-terning" data-størrelse="stor">L</button>
+              <button class="str-knapp widget-str-valg" data-widget="card-terning" data-størrelse="xl">XL</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -297,10 +306,10 @@
     <button class="btn btn-ghost w-full btn-sm" id="btn-dagsplan-legg-til" title="Legg til punkt (d)">+ Legg til punkt</button>
   </div>
 
-  <!-- Card: Klokke — analog urskive + digital tid, med vær og pollen under.
+  <!-- Card: Klokke — analog urskive + digital tid. Været bor i headeren (og i
+       vær-popupen der), ikke her — det sto begge steder og var ren dobling.
        Urskiven er statisk SVG; strekene og tallene tegnes én gang av setupKlokke(),
-       og de tre viserne roteres av oppdaterKlokke() hvert sekund. Værblokka fylles
-       av renderVær() med de samme dataene som headeren bruker — ingen ekstra kall. -->
+       og de tre viserne roteres av oppdaterKlokke() hvert sekund. -->
   <div class="card" id="card-klokke">
     <button class="kl-widget-close" onclick="toggleWidgetSynlighet('card-klokke', false)" title="Fjern fra siden">✕</button>
     <div class="card-header">
@@ -321,21 +330,32 @@
     </div>
     <div id="klokke-digital">--:--</div>
 
-    <!-- Værblokk: hovedlinje (emoji + temperatur), tre detaljrader og stedsvelger -->
-    <div class="klokke-vaer">
-      <div class="klokke-vaer-hoved">
-        <span id="klokke-vaer-emoji">⏳</span>
-        <span id="klokke-vaer-temp">–</span>
-      </div>
-      <div class="klokke-vaer-rad"><span>💨 Vind</span><strong id="klokke-vaer-vind">–</strong></div>
-      <div class="klokke-vaer-rad"><span>🌧 Nedbør (6 t)</span><strong id="klokke-vaer-nedbor">–</strong></div>
-      <div class="klokke-vaer-rad"><span>🌿 Pollen</span><strong id="klokke-vaer-pollen">–</strong></div>
+  </div>
 
-      <button id="klokke-sted" class="klokke-sted" title="Klikk for å bytte sted">📍 Eidsvoll</button>
-      <div id="klokke-sted-sok" class="klokke-sted-sok hidden">
-        <input type="text" id="input-klokke-sted" placeholder="Søk etter sted…" autocomplete="off">
-        <div id="klokke-sted-treff" class="klokke-sted-treff"></div>
+  <!-- Card: Terning — d4 til d20, 1–6 om gangen. Terningflatene tegnes som SVG av
+       renderTerninger(); d6 får ekte prikkeflater, de øvrige sin egen silhuett med
+       tallet i midten. Kast-knappen kjører en kort «trilling» før verdiene lander. -->
+  <div class="card" id="card-terning">
+    <button class="kl-widget-close" onclick="toggleWidgetSynlighet('card-terning', false)" title="Fjern fra siden">✕</button>
+    <div class="card-header">
+      <span class="drag-handle" title="Dra for å flytte">⠿</span>
+      <h2>🎲 Terning</h2>
+    </div>
+
+    <div id="terning-flater"></div>
+    <div id="terning-sum" class="terning-sum"></div>
+
+    <!-- Terningtype: knapperaden fylles av renderTerningType() så d4…d20 ikke må
+         gjentas i markupen, og aktiv type kan markeres ett sted. -->
+    <div id="terning-type" class="terning-type"></div>
+
+    <div class="terning-kontroller">
+      <div class="terning-antall" title="Hvor mange terninger som kastes">
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-terning-minus" title="Færre terninger">−</button>
+        <span id="terning-antall-tall">1</span>
+        <button class="btn btn-ghost btn-sm btn-icon" id="btn-terning-pluss" title="Flere terninger">+</button>
       </div>
+      <button class="btn btn-primary flex-1" id="btn-terning-kast" title="Kast (k)">🎲 Kast</button>
     </div>
   </div>
 
@@ -362,6 +382,7 @@
       <kbd>o</kbd> orden &nbsp;
       <kbd>t</kbd> timer &nbsp;
       <kbd>g</kbd> grupper &nbsp;
+      <kbd>k</kbd> kast &nbsp;
       <kbd>b</kbd> tavle
     </span>
     <span class="lagret-hint">Lagres automatisk i nettleseren</span>

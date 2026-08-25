@@ -16,6 +16,8 @@ Et digitalt klasseromsdashboard for lærere — navnetrekning, gruppeinndeling, 
 | **⭐ Ordenselever** | Trekk to ordenselever — alle får før noen får igjen |
 | **Klassebamse** | Trekk hvem som tar med klassebamsen hjem (bamsen kan hete hva som helst) |
 | **⏱ Timer** | Nedtelling med fremdriftslinje — fortsetter selv om du bytter side |
+| **🕐 Klokke** | Analog urskive med tallene 1–12, og digital tid under |
+| **🎲 Terning** | Kast d4–d20, 1–6 terninger om gangen, med sum |
 | **📋 Dagsplan** | Dagens punkter — marker ferdig, dra for å endre rekkefølge |
 | **Notat** | Fritekstkort — legg til så mange du vil |
 | **Bilde** | Bildekort med bilder opptil 50 MB (lagres i IndexedDB) |
