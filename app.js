@@ -3,7 +3,17 @@
 // ===================== Constants =====================
 // Nøkkelen all tilstand lagres under i localStorage. Endres den, «mister» appen
 // gammel lagret data (den finner den ikke igjen) — så la den stå.
+// NB: nøkkelen heter fortsatt «klasserom» selv om appen nå heter Skoledash. Endres den,
+// finner ikke appen igjen dataene til eksisterende brukere.
 const STORAGE_KEY = 'klasserom_state_v1';
+
+// Hvor ☕-knappen og velkomstmeldingen sender folk som vil donere. Når Vipps er
+// godkjent, blir ☕ en liten meny med Vipps, Ko-fi og lenke til vilkar.html.
+const DONASJON_URL = 'https://ko-fi.com/knitresletta';
+
+// Egen nøkkel (ikke i state) så velkomsten gjelder per nettleser, ikke per side,
+// og ikke blir med i eksport/import av data.
+const VELKOMMEN_KEY = 'skoledash_velkommen_sett';
 
 // Fargepaletten gruppene tildeles (bakgrunn + tekst), brukt både på gruppe-kort og
 // som prikk/farge i elevlista. Det er flere grupper enn farger? Da gjentas paletten.
@@ -2230,6 +2240,37 @@ function nullstillDagsplan()    { aktivSide().dagsplan = []; saveState(); render
 // funksjon endres, skal OPPDATERINGSLOGG_HTML og BRUKERVEILEDNING_HTML oppdateres i
 // samme commit. Nyeste versjonsblokk legges øverst.
 const OPPDATERINGSLOGG_HTML = `
+  <!-- Kort utgave av ROADMAP.md. Endres planen, oppdater begge stedene. -->
+  <details class="logg-roadmap">
+    <summary>🗺️ Hva kommer? Se planen videre</summary>
+    <p>Dette er ideer, ikke løfter. Rekkefølgen kan endre seg. Savner du noe? Si fra via <strong>💬 Tilbakemelding</strong>.</p>
+    <strong>Neste</strong>
+    <ul>
+      <li>🔊 <strong>Lydnivåmåler:</strong> mikrofonen viser hvor høyt det er i rommet. Lyden blir værende på maskinen</li>
+      <li>🤫 <strong>Arbeidssymboler og trafikklys:</strong> «Hvisk», «Stille», «Spør en venn», «Jobb sammen», og rødt, gult og grønt</li>
+      <li>⏱ <strong>Stoppeklokke:</strong> tell oppover i Timer-kortet</li>
+    </ul>
+    <strong>Senere</strong>
+    <ul>
+      <li>🙂 Exit-avstemning med emoji-skala, rett på tavla</li>
+      <li>🏆 Poengtavle for grupper og lag</li>
+      <li>📅 Nedtelling til en dato, for eksempel «12 dager til juleferie»</li>
+      <li>✏️ Tegnebrett</li>
+      <li>📷 Dokumentkamera (webkamera i et kort)</li>
+      <li>🔳 QR-kode fra en lenke</li>
+      <li>🖼 Bakgrunnsbilder bak kortene</li>
+    </ul>
+  </details>
+  <div class="logg-entry">
+    <div class="logg-versjon">v2.21</div>
+    <div class="logg-dato">1. november 2026</div>
+    <ul>
+      <li><strong>Appen heter nå Skoledash!</strong> Alt du har lagret, er der fortsatt akkurat som før. Nye backupfiler heter <code>skoledash-backup-(dato).json</code>, og gamle backupfiler kan fortsatt importeres</li>
+      <li><strong>Velkomstmelding</strong> første gang du åpner Skoledash i en nettleser</li>
+      <li><strong>☕ Støtt utviklingen:</strong> Skoledash er gratis, uten innlogging og uten abonnement. Vil du gi et lite bidrag, finner du ☕ helt øverst til høyre</li>
+      <li><strong>Se planen videre:</strong> øverst i denne loggen ligger en boks som viser hva som kommer</li>
+    </ul>
+  </div>
   <div class="logg-entry">
     <div class="logg-versjon">v2.20</div>
     <div class="logg-dato">25. august 2026</div>
@@ -2508,6 +2549,8 @@ const OPPDATERINGSLOGG_HTML = `
 
 // Brukerveiledningen som vises i info-modalen (se note over OPPDATERINGSLOGG_HTML).
 const BRUKERVEILEDNING_HTML = `
+  <h4>☕ Gratis, uten innlogging</h4>
+  <p>Skoledash er gratis å bruke. Du trenger verken konto eller abonnement, og alt du legger inn blir liggende i nettleseren din. Vil du støtte utviklingen, trykker du på <strong>☕</strong> helt øverst til høyre. Da åpnes en side for donasjoner i en ny fane. Hva som kommer framover, ser du øverst i <strong>📋 Oppdateringslogg</strong>.</p>
   <h4>Sider — ett arbeidsbord per klasse</h4>
   <p>Klikk <strong>+</strong> i midten av headeren for å legge til en ny side, klikk på et sidenavn for å bytte, og <strong>✕</strong> på en fane for å slette. Tanken er at <strong>hver side er sin egen klasse</strong>: lag side 1 for 1A og side 2 for 1B, og bytt fritt mellom dem gjennom dagen uten at noe blandes.</p>
   <p><strong>Gi en side nytt navn</strong> ved å dobbeltklikke på fanen. Da blir den til et lite skrivefelt — skriv inn navnet (f.eks. «1A» eller «Mattegruppe») og trykk <kbd>Enter</kbd> for å lagre. <kbd>Esc</kbd> avbryter uten å endre navnet.</p>
@@ -2594,13 +2637,13 @@ const BRUKERVEILEDNING_HTML = `
   <p><strong>Endre antall:</strong> bruk <strong>⊞ Kolonner</strong> med <strong>−</strong> og <strong>+</strong> nederst til venstre for å gå mellom 1 og 4 kolonner. Når du fjerner en kolonne, flyttes kortene som lå der over til den siste kolonnen — ingenting forsvinner. Antall kolonner lagres per side, så side 1 kan ha tre kolonner mens side 2 har én.</p>
 
   <h4>Tema</h4>
-  <p>Åpne <strong>Klasserom-menyen</strong> (tannhjulet øverst til venstre) og hold musen over <strong>🎨 Tema</strong>. Velg blant tre standardtemaer (Lyst, Mørkt, Høy kontrast) eller åtte kreative temaer: Under vann, På fjellet, I skogen, I en vulkan, I eventyrland, Matrix, Cyberspace og Equestria. Temaet lagres automatisk.</p>
+  <p>Åpne <strong>Skoledash-menyen</strong> (🏫 Skoledash øverst til venstre) og hold musen over <strong>🎨 Tema</strong>. Velg blant tre standardtemaer (Lyst, Mørkt, Høy kontrast) eller åtte kreative temaer: Under vann, På fjellet, I skogen, I en vulkan, I eventyrland, Matrix, Cyberspace og Equestria. Temaet lagres automatisk.</p>
 
   <h4>Font</h4>
-  <p>Hold musen over <strong>🔤 Font</strong> i Klasserom-menyen. Velg blant systemstandard og seks Google Fonts — inkludert <em>Victor Mono</em> (monospace), <em>Caveat</em> (håndskrevet) og <em>Playfair Display</em> (serif). Fonten lastes dynamisk og lagres til neste gang.</p>
+  <p>Hold musen over <strong>🔤 Font</strong> i Skoledash-menyen. Velg blant systemstandard og seks Google Fonts — inkludert <em>Victor Mono</em> (monospace), <em>Caveat</em> (håndskrevet) og <em>Playfair Display</em> (serif). Fonten lastes dynamisk og lagres til neste gang.</p>
 
   <h4>Skriftstørrelse</h4>
-  <p>Hold musen over <strong>📏 Skriftstørrelse</strong> i Klasserom-menyen. Under <strong>Alle widgets</strong> skalerer du hele grensesnittet (Liten → Ekstra stor), der Normal er standardstørrelsen. Under <strong>Enkelt widget</strong> kan du forstørre eller forminske ett kort om gangen med S/M/L/XL-knapper uten å lukke menyen — størrelsen legger seg oppå den globale.</p>
+  <p>Hold musen over <strong>📏 Skriftstørrelse</strong> i Skoledash-menyen. Under <strong>Alle widgets</strong> skalerer du hele grensesnittet (Liten → Ekstra stor), der Normal er standardstørrelsen. Under <strong>Enkelt widget</strong> kan du forstørre eller forminske ett kort om gangen med S/M/L/XL-knapper uten å lukke menyen — størrelsen legger seg oppå den globale.</p>
 
   <h4>Kursiv tekst i Notat</h4>
   <p>Trykk <strong><em>𝐼</em></strong>-knappen øverst i Notat-kortet for å slå kursiv tekst av og på. Innstillingen lagres automatisk.</p>
@@ -2628,13 +2671,13 @@ const BRUKERVEILEDNING_HTML = `
   <p>Snarveiene virker bare når du <em>ikke</em> står og skriver i et tekstfelt, og de utløses ikke sammen med <kbd>Cmd</kbd>/<kbd>Ctrl</kbd>/<kbd>Alt</kbd>.</p>
 
   <h4>💬 Tilbakemelding & kontakt</h4>
-  <p>Klikk <strong>💬 Tilbakemelding</strong> i Klasserom-menyen (tannhjulet øverst til venstre). Der finner du to måter å nå utvikleren på: send en e-post til <strong>knitresletta@pm.me</strong>, eller opprett en sak (issue) på GitHub for å melde en feil eller foreslå en ny funksjon.</p>
+  <p>Klikk <strong>💬 Tilbakemelding</strong> i Skoledash-menyen (🏫 Skoledash øverst til venstre). Der finner du to måter å nå utvikleren på: send en e-post til <strong>knitresletta@pm.me</strong>, eller opprett en sak (issue) på GitHub for å melde en feil eller foreslå en ny funksjon.</p>
 
   <h4>Lagring</h4>
   <p>Alt lagres automatisk i nettleseren din (localStorage). Ingenting sendes til internett — data er kun på din maskin. Ulike nettlesere eller private vinduer har separate lagre.</p>
 
   <h4>📤 Eksportere og 📥 importere data</h4>
-  <p>Siden data kun bor i nettleseren din, er det lurt å ta en <strong>backup</strong>. Åpne <strong>Klasserom-menyen</strong> og velg <strong>📤 Eksporter data</strong> — da lastes det ned én fil som inneholder alt: klasselister, alle sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder.</p>
+  <p>Siden data kun bor i nettleseren din, er det lurt å ta en <strong>backup</strong>. Åpne <strong>Skoledash-menyen</strong> og velg <strong>📤 Eksporter data</strong> — da lastes det ned én fil som inneholder alt: klasselister, alle sider (med elever, grupper, trekk-backlogs og begrensninger), innstillinger, notater og bilder.</p>
   <p>For å hente data tilbake — eller flytte alt til en annen maskin eller nettleser — velg <strong>📥 Importer data</strong> og pek på fila. Du får velge mellom <strong>«Erstatt alt»</strong> (full gjenoppretting som overskriver det som ligger der nå) og <strong>«Slå sammen kun klasselister»</strong> (behold alt ditt, men hent inn de lagrede listene fra fila — fint for å dele klasselister mellom lærere).</p>
   <p>Når du har laget nye lister eller endret en backlog siden forrige eksport, dukker det opp et lite <strong>«● Ueksporterte endringer»</strong>-merke nederst, rett over hurtigtast-baren. Klikk på det for å ta en ny backup. Tips: eksporter med jevne mellomrom, så er du trygg om nettleserdata skulle bli tømt.</p>`;
 
@@ -3762,6 +3805,7 @@ async function eksporterData() {
   }
   const nå = new Date();
   const data = {
+    // App-ID-en beholdes etter navnebyttet, så gamle og nye backuper kan importeres om hverandre.
     app: 'klasserom-dashboard',
     format_versjon: EKSPORT_FORMAT_VERSJON,
     eksportert: nå.toISOString(),
@@ -3792,7 +3836,7 @@ async function eksporterData() {
   const a    = document.createElement('a');
   const dato = `${nå.getFullYear()}-${String(nå.getMonth() + 1).padStart(2, '0')}-${String(nå.getDate()).padStart(2, '0')}`;
   a.href = url;
-  a.download = `klasserom-backup-${dato}.json`;
+  a.download = `skoledash-backup-${dato}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -3823,7 +3867,7 @@ function håndterImportFil(input) {
       return;
     }
     if (!data || data.app !== 'klasserom-dashboard' || !data.innhold) {
-      notify('Dette ser ikke ut som en klasserom-backup', 'error');
+      notify('Dette ser ikke ut som en Skoledash-backup', 'error');
       return;
     }
     if (data.format_versjon > EKSPORT_FORMAT_VERSJON) {
@@ -3916,6 +3960,25 @@ async function bekreftImport() {
 // Appens oppstart (kjøres når DOM-en er klar, se nederst i fila). Tegner all data fra
 // lagret tilstand, oppretter DOM for flerinstans-widgets (notat/bilde), kobler opp
 // hendelser og dra-og-slipp, og setter i gang dato-/vær-oppdatering på timer.
+// ===================== Velkomst og donasjon =====================
+// Gir alle [data-donasjon]-lenker (☕ i headeren + knappen i velkomstmodalen) samme
+// adresse, og viser velkomstmodalen én gang per nettleser. Lukkes den, huskes det i
+// VELKOMMEN_KEY. Eksisterende brukere har ikke nøkkelen, så de ser den også én gang.
+function setupVelkommen() {
+  document.querySelectorAll('[data-donasjon]').forEach(a => { a.href = DONASJON_URL; });
+
+  const modal = document.getElementById('velkommen-modal');
+  const lukk = () => {
+    modal.style.display = 'none';
+    localStorage.setItem(VELKOMMEN_KEY, '1');
+  };
+  document.getElementById('btn-velkommen-lukk').onclick = lukk;
+  // Klikk på donasjonslenka teller også som «sett», ellers dukker meldingen opp igjen.
+  modal.querySelector('[data-donasjon]').addEventListener('click', lukk);
+
+  if (!localStorage.getItem(VELKOMMEN_KEY)) modal.style.display = 'flex';
+}
+
 function init() {
   oppdaterDato();
   setupKlokke();
@@ -3982,6 +4045,7 @@ function init() {
   renderSiderNav();
   oppdaterKolonneStepper();
   oppdaterEksportVarsel();
+  setupVelkommen();
 
   // Async bilde-oppstart: åpne IndexedDB, migrer gammelt localStorage-format, rydd
   // foreldreløse blober og tegn bildekortene. Blokkerer ikke resten av oppstarten.

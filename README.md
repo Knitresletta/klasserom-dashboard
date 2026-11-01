@@ -1,4 +1,4 @@
-# 🏫 Klasserom-dashboard
+# 🏫 Skoledash
 
 Et digitalt klasseromsdashboard for lærere — navnetrekning, gruppeinndeling, timer, dagsplan og mer, rett i nettleseren. Ingen innlogging, ingen installasjon, ingenting sendes til en server.
 
@@ -51,6 +51,10 @@ python3 serve.py 5500     # egen port
 # Syntaks-sjekk av JS uten å kjøre appen:
 node --check app.js
 ```
+
+## Gratis, uten innlogging
+
+Skoledash er gratis å bruke, uten konto og uten abonnement. Vil du støtte utviklingen, finner du ☕ øverst til høyre i appen. Hva som er planlagt framover, står i [ROADMAP.md](ROADMAP.md).
 
 ## Tilbakemeldinger
 

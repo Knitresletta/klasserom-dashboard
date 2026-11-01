@@ -1292,6 +1292,21 @@ textarea[id^="notat-textarea"]:focus {
 #btn-widget-meny:hover {
     background: rgb(255 255 255 / 0.28);
 }
+/* Donasjonsknappen: samme glass-stil som ⊞ Widgets, men kvadratisk med bare ☕. */
+#btn-doner {
+    background: rgb(255 255 255 / 0.18);
+    border: 1px solid rgb(255 255 255 / 0.3);
+    border-radius: var(--r-sm);
+    padding: 4px 8px;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+#btn-doner:hover {
+    background: rgb(255 255 255 / 0.28);
+}
 #widget-dropdown {
     position: absolute;
     top: calc(100% + 10px);
@@ -1663,6 +1678,21 @@ main.drag-active::before {
 }
 .logg-entry ul {
     margin: 4px 0;
+}
+/* Kollapset roadmap-boks øverst i oppdateringsloggen. <details> folder seg ut uten JS. */
+.logg-roadmap {
+    border: 1px dashed var(--primary);
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-bottom: 14px;
+    background: var(--bg);
+}
+.logg-roadmap summary {
+    font-weight: 700;
+    cursor: pointer;
+}
+.logg-roadmap ul {
+    margin: 8px 0 4px;
 }
 
 /* ===================== Animations ===================== */
@@ -2150,6 +2180,21 @@ main.drag-active::before {
 .kontakt-lenke:hover {
     background: var(--primary-l);
     border-color: var(--primary);
+}
+
+/* ===================== Velkomst-modal ===================== */
+.velkommen-boks p {
+    margin: 0;
+    line-height: 1.5;
+}
+.velkommen-ikon {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--primary-l);
+}
+.velkommen-boks .modal-knapper a {
+    text-decoration: none;
 }
 
 /* ===================== Eksport-varsel (over action-bar) ===================== */
