@@ -32,6 +32,13 @@
   All logikk ligger i app.js (lastes nederst). Tekst styres via data-attributter.
 -->
 
+<!-- Flyttebanner: denne adressen er frosset, Skoledash bor nå på skoledash.app.
+     Data følger adressen i nettleseren, så brukeren må eksportere her og importere der. -->
+<div id="flytte-banner">
+  <span>📦 <strong>Skoledash har flyttet til skoledash.app.</strong> Dataene dine ligger i denne nettleseren og blir ikke med av seg selv. Trykk på knappen, så lagres en backupfil, og den nye siden åpnes. Der velger du 📥 Importer data i 🏫-menyen.</span>
+  <button id="btn-flytt" class="btn btn-primary btn-sm">📤 Eksporter og åpne skoledash.app</button>
+</div>
+
 <header>
   <!-- Skoledash-menyen: klikk på tittelen åpner nedtrekket. Valgene med .kl-has-submenu
        folder ut en undermeny (tema/font/størrelse). data-tema/-font/-størrelse leses av

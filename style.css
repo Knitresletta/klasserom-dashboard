@@ -2182,6 +2182,20 @@ main.drag-active::before {
     border-color: var(--primary);
 }
 
+/* ===================== Flyttebanner (gammel adresse) ===================== */
+#flytte-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    background: #fef3c7;
+    color: #78350f;
+    font-size: 0.9rem;
+    border-bottom: 2px solid #f59e0b;
+}
+
 /* ===================== Velkomst-modal ===================== */
 .velkommen-boks p {
     margin: 0;
