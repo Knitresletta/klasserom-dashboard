@@ -36,7 +36,9 @@
      Data følger adressen i nettleseren, så brukeren må eksportere her og importere der. -->
 <div id="flytte-banner">
   <span>📦 <strong>Skoledash har flyttet til skoledash.app.</strong> Dataene dine ligger i denne nettleseren og blir ikke med av seg selv. Trykk på knappen, så lagres en backupfil, og den nye siden åpnes. Der velger du 📥 Importer data i 🏫-menyen.</span>
-  <button id="btn-flytt" class="btn btn-primary btn-sm">📤 Eksporter og åpne skoledash.app</button>
+  <!-- Vanlig lenke + inline onclick med vilje: virker selv om nettleseren har en eldre
+       app.js i cache (eksporterData finnes der også), og lenker stoppes ikke av popup-blokkering. -->
+  <a id="btn-flytt" class="btn btn-primary btn-sm" href="https://skoledash.app" target="_blank" rel="noopener" onclick="eksporterData()">📤 Eksporter og åpne skoledash.app</a>
 </div>
 
 <header>

@@ -2195,6 +2195,9 @@ main.drag-active::before {
     font-size: 0.9rem;
     border-bottom: 2px solid #f59e0b;
 }
+#btn-flytt {
+    text-decoration: none;
+}
 
 /* ===================== Velkomst-modal ===================== */
 .velkommen-boks p {

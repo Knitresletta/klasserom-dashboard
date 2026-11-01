@@ -4047,13 +4047,6 @@ function init() {
   oppdaterEksportVarsel();
   setupVelkommen();
 
-  // Flyttebanner: ny fane åpnes først, mens klikket fortsatt teller som brukerhandling
-  // (ellers kan popup-blokkeren stoppe den etter await). Nedlastingen skjer i denne fanen.
-  document.getElementById('btn-flytt').onclick = () => {
-    window.open('https://skoledash.app', '_blank', 'noopener');
-    eksporterData();
-  };
-
   // Async bilde-oppstart: åpne IndexedDB, migrer gammelt localStorage-format, rydd
   // foreldreløse blober og tegn bildekortene. Blokkerer ikke resten av oppstarten.
   initBilder();
